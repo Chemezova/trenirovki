@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><title>Тесты логики</title>
+<style>body{font-family:system-ui;padding:16px}.ok{color:#0a6b3d}.fail{color:#b3261e;font-weight:700}</style></head>
+<body>
+<h1>Тесты логики</h1>
+<pre id="out"></pre>
+<script type="module">
+import * as cy from './js/cycle.js';
+import { suggest } from './js/progression.js';
+
+const out = document.getElementById('out');
+let pass = 0, fail = 0;
+function eq(name, got, want) {
+  const ok = JSON.stringify(got) === JSON.stringify(want);
+  ok ? pass++ : fail++;
+  out.innerHTML += `<span class="${ok ? 'ok' : 'fail'}">${ok ? '✓' : '✗'} ${name}${ok ? '' : ` — получено ${JSON.stringify(got)}, ожидалось ${JSON.stringify(want)}`}</span>\n`;
+}
+
+const START = '2026-10-26';
+// недели и фазы
+eq('23.10 — вводная неделя 0', cy.weekOf('2026-10-23', START), 0);
+eq('26.10 — неделя 1', cy.weekOf('2026-10-26', START), 1);
+eq('01.11 (вс) — неделя 1', cy.weekOf('2026-11-01', START), 1);
+eq('09.11 — неделя 3', cy.weekOf('2026-11-09', START), 3);
+eq('23.11 — неделя 5', cy.weekOf('2026-11-23', START), 5);
+eq('18.01 — неделя 13', cy.weekOf('2027-01-18', START), 13);
+eq('сдвиг на неделю с недели 3', cy.weekOf('2026-11-16', START, [{ fromRawWeek: 3, weeks: 1 }]), 3);
+eq('фаза недели 4', cy.phaseOf(4), 'p1');
+eq('фаза недели 5', cy.phaseOf(5), 'p2');
+eq('фаза недели 13', cy.phaseOf(13), 'deload');
+eq('подходы: неделя 0', cy.setsFor(0, 'p1'), 2);
+eq('подходы: неделя 1', cy.setsFor(1, 'p1'), 2);
+eq('подходы: неделя 3', cy.setsFor(3, 'p1'), 3);
+eq('подходы: неделя 5', cy.setsFor(5, 'p2'), 3);
+eq('подходы: неделя 13', cy.setsFor(13, 'deload'), 2);
+eq('контрольный замер 23.10 → 0', cy.checkpointNear('2026-10-23', START), 0);
+eq('контрольный замер 23.11 → 4', cy.checkpointNear('2026-11-23', START), 4);
+eq('не контрольный день', cy.checkpointNear('2026-11-05', START), null);
+eq('день недели 23.10 = пятница', cy.weekday('2026-10-23'), 5);
+eq('начало недели 23.10', cy.weekStart('2026-10-23'), '2026-10-19');
+
+// какую тренировку предложить
+eq('пятница вводной недели → А', cy.plannedSlot('2026-10-23', 0, new Set()).slot, 'A');
+eq('понедельник → А', cy.plannedSlot('2026-10-26', 1, new Set()).slot, 'A');
+eq('вторник после пропущенного Пн → А вне расписания', cy.plannedSlot('2026-10-27', 1, new Set()), { slot: 'A', scheduled: false });
+eq('пятница, А уже сделана во вт → Б', cy.plannedSlot('2026-10-30', 1, new Set(['A', 'cardio'])).slot, 'B');
+eq('среда, А не сделана → кардио по плану', cy.plannedSlot('2026-10-28', 1, new Set()).slot, 'cardio');
+
+// подсказка веса
+const R = { min: 12, max: 15 };
+const s = (weight, reps, breathHold = false) => ({ weight, reps, breathHold });
+const h = (date, sets, extra = {}) => ({ date, phase: 'p1', sets, ...extra });
+const base = { range: R, step: 1, mode: 'double', today: '2026-11-02' };
+eq('калибровка без истории', suggest({ ...base, history: [] }).kind, 'calibration');
+eq('все на верхе → +1', suggest({ ...base, history: [h('2026-10-30', [s(10, 15), s(10, 15)])] }).weight, 11);
+eq('breathHold → −1', suggest({ ...base, history: [h('2026-10-30', [s(10, 15), s(10, 15, true)])] }).weight, 9);
+eq('меньше минимума → тот же, добрать', suggest({ ...base, history: [h('2026-10-30', [s(10, 13), s(10, 11)])] }), { kind: 'addReps', weight: 10, lastSets: [13, 11], reason: 'Тот же вес — добрать повторы' });
+eq('внутри диапазона → тот же', suggest({ ...base, history: [h('2026-10-30', [s(10, 14), s(10, 13)])] }).weight, 10);
+eq('лёгкий день не учитывается', suggest({ ...base, history: [h('2026-10-31', [s(8, 15), s(8, 15)], { lightDay: true }), h('2026-10-30', [s(10, 13), s(10, 13)])] }).weight, 10);
+eq('разгрузка не учитывается', suggest({ ...base, history: [h('2026-10-31', [s(8, 12)], { phase: 'deload' }), h('2026-10-30', [s(10, 15), s(10, 15)])] }).weight, 11);
+eq('перерыв 14+ дней → −1', suggest({ ...base, today: '2026-11-20', history: [h('2026-10-30', [s(10, 15), s(10, 15)])] }).weight, 9);
+eq('Паллоф: одна сессия на верхе → ждём', suggest({ ...base, topSessions: 2, history: [h('2026-10-30', [s(3, 15), s(3, 15)]), h('2026-10-26', [s(3, 14), s(3, 15)])] }).weight, 3);
+eq('Паллоф: две сессии на верхе → +1', suggest({ ...base, topSessions: 2, history: [h('2026-10-30', [s(3, 15), s(3, 15)]), h('2026-10-26', [s(3, 15), s(3, 15)])] }).weight, 4);
+eq('гоблет неделя 1 без веса', suggest({ ...base, forceBodyweight: true, history: [] }).weight, null);
+eq('гоблет неделя 2: вес ещё не было → калибровка', suggest({ ...base, history: [h('2026-10-26', [s(null, 15), s(null, 15)])] }).kind, 'calibration');
+const RW = { min: 10, max: 15 };
+eq('разведения: +1 повтор', suggest({ ...base, range: RW, mode: 'repsThenWeight', history: [h('2026-10-30', [s(2, 12), s(2, 11)])] }).targetReps, 12);
+eq('разведения: 15 везде → +вес, повторы с 10', suggest({ ...base, range: RW, mode: 'repsThenWeight', history: [h('2026-10-30', [s(2, 15), s(2, 15)])] }), { kind: 'up', weight: 3, targetReps: 10, lastSets: [15, 15], reason: 'Все подходы по 15 — добавляем вес, повторы снова с 10' });
+const RS = { min: 10, max: 12 };
+eq('зашагивание: калибровка', suggest({ ...base, range: RS, mode: 'repsOnly', history: [] }).kind, 'calibration');
+eq('зашагивание: +1 повтор', suggest({ ...base, range: RS, mode: 'repsOnly', history: [h('2026-10-30', [s(null, 10), s(null, 11)])] }).targetReps, 11);
+eq('зашагивание: 2 сессии на верхе → гантели', suggest({ ...base, range: RS, mode: 'repsOnly', offerDumbbells: true, history: [h('2026-10-30', [s(null, 12), s(null, 12)]), h('2026-10-26', [s(null, 12), s(null, 12)])] }).offerDumbbells, true);
+
+out.innerHTML = `<b>${fail ? `<span class="fail">Провалено: ${fail}</span>` : '<span class="ok">Все тесты прошли</span>'} · пройдено ${pass}</b>\n\n` + out.innerHTML;
+document.title = fail ? `FAIL ${fail}` : `OK ${pass}`;
+</script>
+</body>
+</html>
