@@ -465,7 +465,7 @@ export function renderVideoSheet(id) {
     ${videoLinks(v)}
     ${v.exercises && v.exercises.length ? `<h3>Упражнения</h3><div class="day-list">${v.exercises.map((e) => {
       const r = risky.find((x) => x.ex === e);
-      return `<div class="day-item"><div class="di-icon">${icon(r ? 'ban' : 'check')}</div><div class="di-body"><div class="di-title">${esc(e.name)}${e.dose ? ` · ${esc(e.dose)}` : ''}</div>
+      return `<div class="day-item"><div class="di-icon">${icon(r ? 'ban' : 'check')}</div><div class="di-body"><div class="di-title">${e.type ? `<span class="sub">${esc(e.type)}:</span> ` : ''}${esc(e.name)}${e.dose ? ` · ${esc(e.dose)}` : ''}</div>
         ${e.tech ? `<div class="di-meta">${esc(e.tech)}</div>` : ''}
         ${r ? `<p class="eye-note">Тебе нельзя: ${esc(r.risks[0].swap[1])}. Замена: ${esc(r.risks[0].swap[2])}.</p>` : ''}</div></div>`;
     }).join('')}</div>` : ''}
@@ -498,7 +498,7 @@ export function renderVideoImport() {
       <pre class="prompt">${esc(TABLE_PROMPT)}</pre>${btn('Скопировать задание', 'copy-prompt')}</section>
     <section class="card"><h2>2. Вставь результат</h2>
       <label class="field">Название программы<input type="text" data-f="imp-source" value="${esc(f.source ?? 'Модельная фигура')}"></label>
-      <label class="field">Таблица: День;Упражнение;Подходы;Техника;Ссылка<textarea data-f="imp-text" rows="8" placeholder="День 1;Скалолаз;3×1 мин;корпус прямой;https://t.me/babbiebuttt/1675">${esc(f.text || '')}</textarea></label>
+      <label class="field">Таблица: День;Упражнение;Подходы;Техника;Ссылка;Программа;Тип<textarea data-f="imp-text" rows="8" placeholder="День 1;Скалолаз;3×1 мин;корпус прямой;https://t.me/babbiebuttt/1675">${esc(f.text || '')}</textarea></label>
       <p class="note">Подходят точка с запятой и табуляция — можно копировать прямо из Google Таблиц. Строки одного дня станут одним видео.</p>
       ${btn('Импортировать', 'video-import', { cls: 'btn-primary btn-xl' })}</section>`;
 }
@@ -519,15 +519,16 @@ export function parseVideoTable(text, source) {
     if (!line) continue;
     const cols = line.split(line.includes('\t') ? '\t' : ';').map((c) => c.trim());
     if (cols.length < 2 || (/^д[её]нь$/i.test(cols[0]) && /упражнени/i.test(cols[1]))) continue;
-    const [day, name, dose = '', tech = '', url = ''] = cols;
-    const key = day || 'Без дня';
-    if (!groups.has(key)) groups.set(key, { day: key, url: '', exercises: [] });
+    const [day, name, dose = '', tech = '', url = '', program = '', type = ''] = cols;
+    const prog = program || source;
+    const key = `${prog}|${day || 'Без дня'}`;
+    if (!groups.has(key)) groups.set(key, { day: day || 'Без дня', prog, url: '', exercises: [] });
     const g = groups.get(key);
     if (url && !g.url) g.url = url;
-    g.exercises.push({ name, dose, tech });
+    g.exercises.push({ name, dose, tech, type: type && type !== 'основная' ? type : undefined });
   }
   return [...groups.values()].map((g, i) => ({
-    title: `${source ? `${source} · ` : ''}${g.day}`,
+    title: `${g.prog ? `${g.prog} · ` : ''}${g.day}`,
     url: g.url,
     exercises: g.exercises,
     order: parseInt((g.day.match(/\d+/) || [String(i + 1)])[0], 10),
