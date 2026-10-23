@@ -255,6 +255,16 @@ details.classes[open] summary::before { content: "▾ "; }
 .plan-day .pd-body { flex: 1; min-width: 0; }
 .plan-day.is-today { outline: 2px solid var(--coral); outline-offset: -2px; }
 
+/* занятия по типам */
+.types { display: flex; flex-direction: column; gap: 12px; }
+.type-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.type-name { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.type-name .ic { color: var(--sage); }
+.type-val { font-size: .92rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.type-val b { color: var(--text); }
+.type-bar { height: 8px; background: var(--surface-2); border-radius: 4px; margin-top: 6px; overflow: hidden; }
+.type-bar i { display: block; height: 100%; background: var(--sage-2); border-radius: 4px; }
+
 /* графики */
 .chart { width: 100%; height: auto; display: block; }
 .chart .bar { fill: var(--sage-2); }

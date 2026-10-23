@@ -85,6 +85,42 @@ export function expectedLoss(date) {
   return Math.max(0, Math.min(1, d / 91)) * S.settings.goalLossKg;
 }
 
+// Разбивка занятий по типам за период: сколько раз и сколько минут
+export const TYPE_ROWS = [
+  ['gym', 'Зал (силовая)', 'dumbbell'],
+  ['cardio', 'Кардио в клубе', 'heart'],
+  ['pool', 'Бассейн', 'swim'],
+  ['class', 'Групповые занятия', 'group'],
+  ['walk', 'Прогулки', 'walk'],
+  ['ringfit', 'Ring Fit', 'ring'],
+  ['yoga', 'Йога', 'yoga'],
+  ['circuit', 'Видео-тренировки', 'video'],
+  ['other', 'Другое', 'plus'],
+];
+
+export function typeBreakdown(from, to) {
+  const r = Object.fromEntries(TYPE_ROWS.map(([id]) => [id, { count: 0, minutes: 0, km: 0 }]));
+  const add = (id, minutes, km = 0) => { r[id].count += 1; r[id].minutes += Math.round(minutes || 0); r[id].km += km; };
+  for (const s of S.sessions) {
+    if (s.date < from || s.date > to || !(s.status === 'done' || s.status === 'partial')) continue;
+    const pool = s.pool && s.pool.result !== 'none' ? s.pool.minutes || 25 : s.retro && s.gymKind !== 'gym' ? 25 : 0;
+    const cardio = s.cardio ? s.cardio.minutes || 0 : 0;
+    if (pool) add('pool', pool);
+    if (s.slot === 'cardio' && (cardio || s.retro)) add('cardio', cardio || 40);
+    if (s.slot === 'A' || s.slot === 'B') add('gym', Math.max(20, sessionMinutes(s) - pool - cardio));
+  }
+  for (const a of S.activities) {
+    if (a.date < from || a.date > to) continue;
+    if (a.kind === 'walk') {
+      if (a.commute) { r.walk.km += a.distanceKm || 0; r.walk.minutes += Math.round((a.distanceKm || 0) * 13); r.walk.commutes = (r.walk.commutes || 0) + 1; }
+      else add('walk', a.minutes || (a.distanceKm || 0) * 13, walkKm(a));
+    } else if (a.kind === 'video') add('circuit', a.minutes);
+    else if (r[a.kind]) add(a.kind, a.minutes);
+    else add('other', a.minutes);
+  }
+  return TYPE_ROWS.map(([id, name, icon]) => ({ id, name, icon, ...r[id] }));
+}
+
 // «TR;2026-10-23;8123;5,4» — строка из Команды iPhone; без префикса тоже принимается
 export function parseHealth(text) {
   const out = {};

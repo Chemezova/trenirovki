@@ -7,6 +7,7 @@ import { esc, dec, btn, chip, icon, stars, heroArt, quoteOf, barChart, lineChart
 import { HOME_KINDS, SWAPS, TABLE_PROMPT } from './data.js';
 import { hasRuVoice } from './sound.js';
 
+const MONTHS_GEN = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
 const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
 const WD = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const toMin = (hm) => { const [h, m] = hm.split(':').map(Number); return h * 60 + m; };
@@ -224,6 +225,26 @@ function planDayRow(date) {
     <div class="pd-body"><div class="di-title">${esc(title)}</div><div class="di-meta">${esc(meta)}</div></div>${icon(d.type === 'gym' && !d.cancelled ? 'dumbbell' : 'walk', { size: 20 })}</button>`;
 }
 
+const hm = (m) => (m >= 60 ? `${Math.floor(m / 60)} ч${m % 60 ? ` ${m % 60} мин` : ''}` : `${m} мин`);
+const timesWord = (n) => `${n} ${n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'раза' : 'раз'}`;
+
+function typesCard(title, from, to) {
+  const rows = ST.typeBreakdown(from, to);
+  const shown = rows.filter((x) => x.count || x.minutes);
+  if (!shown.length) return `<section class="card"><h2>${esc(title)}</h2><p class="note">Пока нет отмеченных занятий.</p></section>`;
+  const max = Math.max(...shown.map((x) => x.minutes), 1);
+  const total = shown.reduce((t, x) => t + x.minutes, 0);
+  return `<section class="card"><h2>${esc(title)}</h2>
+    <div class="types">${shown.map((x) => {
+      const extra = x.id === 'walk' ? ` · ${dec(x.km)} км${x.commutes ? `, из них до клуба ${x.commutes}×` : ''}` : '';
+      return `<div class="type-row" title="${esc(`${x.name}: ${timesWord(x.count)}, ${hm(x.minutes)}${extra}`)}">
+        <div class="type-head"><span class="type-name">${icon(x.icon, { size: 18 })}${esc(x.name)}</span><span class="type-val"><b>${x.count ? timesWord(x.count) : '—'}</b> · ${hm(x.minutes)}</span></div>
+        <div class="type-bar"><i style="width:${((x.minutes / max) * 100).toFixed(1)}%"></i></div>
+        ${extra ? `<div class="sub">${esc(extra.slice(3))}</div>` : ''}</div>`;
+    }).join('')}</div>
+    <p class="sub">Всего: ${hm(total)} движения</p></section>`;
+}
+
 function monthView() {
   const t = cy.today();
   const base = cy.parse(`${t.slice(0, 8)}01`);
@@ -275,9 +296,10 @@ function monthView() {
       <div class="kpi"><b>${dec(sum(ST.dayKm))} км</b><span>прошла</span></div>
       <div class="kpi"><b>${sum(ST.swimMinutesOn)} мин</b><span>в бассейне</span></div>
       <div class="kpi"><b>${sum(ST.homeMinutesOn)} мин</b><span>занятий дома</span></div></div></section>
-    <section class="card"><h2>Километры по неделям</h2>${barChart(weeks.map((w) => ({ label: w.label, value: w.km, current: w.current })), { unit: 'км', fmt: (v) => dec(v) })}</section>
+    ${typesCard(`Занятия за ${MONTHS_GEN[base.getMonth()]}`, first, last)}
     <section class="card"><h2>Визиты в клуб по неделям</h2>${barChart(weeks.map((w) => ({ label: w.label, value: w.club, current: w.current })), { goal: 3 })}</section>
-    <section class="card"><h2>Бассейн и дом, минуты</h2>${barChart(weeks.map((w) => ({ label: w.label, value: w.swim + w.home, current: w.current, title: `${w.label}: бассейн ${w.swim} мин, дома ${w.home} мин` })), { unit: 'мин' })}</section>`;
+    <section class="card"><h2>Бассейн по неделям, минуты</h2>${barChart(weeks.map((w) => ({ label: w.label, value: w.swim, current: w.current })), { unit: 'мин' })}</section>
+    <section class="card"><h2>Километры по неделям</h2>${barChart(weeks.map((w) => ({ label: w.label, value: w.km, current: w.current })), { unit: 'км', fmt: (v) => dec(v) })}</section>`;
 }
 
 export function renderCalendar() {
@@ -295,6 +317,7 @@ export function renderCalendar() {
     <details class="classes"><summary>Как замеряем результат</summary><p>${esc(P.MEASURE_HOW)}</p></details></section>`);
   parts.push(`<p class="note">Тапни день, чтобы сделать его днём зала, выбрать групповое занятие, перенести или отменить.</p>`);
   parts.push(P.weekDates(ws).map(planDayRow).join(''));
+  if (ws <= t) parts.push(typesCard('Занятия за неделю', ws, cy.addDays(ws, 6)));
   return parts.join('');
 }
 
