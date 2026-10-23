@@ -121,9 +121,12 @@ export function weekStrip(ws) {
   const today = cy.today();
   return `<div class="week">${P.weekDates(ws).map((date) => {
     const d = P.effective(date, S.plan);
-    const cls = [d.type === 'gym' && !d.cancelled ? 'is-gym' : '', date === today ? 'is-today' : '', dayDone(date) ? 'is-done' : '', d.cancelled ? 'is-cancelled' : ''].join(' ');
+    const done = dayDone(date);
+    const missed = date < today && !done && !d.cancelled;
+    const cls = [d.type === 'gym' && !d.cancelled ? 'is-gym' : '', date === today ? 'is-today' : '', done ? 'is-done' : '', d.cancelled ? 'is-cancelled' : '', missed ? 'is-missed' : ''].join(' ');
     const ic = d.cancelled ? 'ban' : d.type === 'gym' ? (d.gymKind === 'pool' ? 'swim' : 'dumbbell') : 'walk';
-    return `<button class="wd ${cls}" data-a="day" data-v="${date}" aria-label="${esc(cy.fmtDate(date, true))}"><span class="wd-name">${WD[cy.weekday(date)]}</span><span class="wd-num">${dayNum(date)}</span>${icon(ic, { size: 18 })}<span class="wd-hours">${hoursShort(date)}</span></button>`;
+    const hours = done && date < today ? `${Math.round(ST.dayMinutes(date) / 6) / 10}ч`.replace('.', ',') : missed ? '—' : hoursShort(date);
+    return `<button class="wd ${cls}" data-a="day" data-v="${date}" aria-label="${esc(`${cy.fmtDate(date, true)}${missed ? ', не отмечено' : ''}`)}"><span class="wd-name">${WD[cy.weekday(date)]}</span><span class="wd-num">${dayNum(date)}</span>${icon(ic, { size: 18 })}<span class="wd-hours">${hours}</span></button>`;
   }).join('')}</div>`;
 }
 
@@ -143,11 +146,9 @@ function goalRows() {
   const wl = ST.weightLoss();
   const exp = ST.expectedLoss(t);
   const lost = wl ? Math.max(0, wl.lost) : 0;
-  const visits = ST.clubVisitDates();
-  const from = [S.settings.startDate, visits[0]].filter(Boolean).sort()[0];
-  const planned = plannedGymDates(from, t).filter((d) => d < t || ST.sessionsOn(d).length);
-  const doneVisits = planned.filter((d) => ST.sessionsOn(d).length).length;
   const ws = cy.weekStart(t);
+  const planned = plannedGymDates(ws, cy.addDays(ws, 6));
+  const doneVisits = ST.clubVisitDates().filter((d) => d >= ws && d <= cy.addDays(ws, 6)).length;
   const phase = cy.phaseOf(cy.weekOf(t, S.settings.startDate));
   const weekKm = ST.sumRange(ST.dayKm, ws, t);
   const weekGoalKm = (stepsGoalPerDay(phase) / ST.STEPS_PER_KM) * 7;
@@ -156,7 +157,7 @@ function goalRows() {
     <div class="goal-row"><div class="goal-head"><b>Вес: ${wl ? (lost > 0 ? `−${dec(lost)}` : '0') : '—'} из −${goal} кг</b><span class="sub">${exp >= 0.05 ? `по плану сейчас −${dec(exp)}` : 'старт 26.10'}</span></div>
       <div class="progress"><div class="fill" style="width:${pct(lost / goal)}"></div><div class="mark" style="left:${pct(exp / goal)}"></div></div>
       ${wl ? '' : '<p class="note">Внеси вес — и здесь появится твой путь.</p>'}</div>
-    <div class="goal-row"><div class="goal-head"><b>Клуб: ${doneVisits} из ${planned.length || 0} по плану</b><span class="sub">3 раза в неделю</span></div>
+    <div class="goal-row"><div class="goal-head"><b>Клуб на этой неделе: ${doneVisits} из ${planned.length || 0}</b><span class="sub">цель 3 раза</span></div>
       <div class="progress"><div class="fill" style="width:${pct(planned.length ? doneVisits / planned.length : 0)}"></div></div></div>
     <div class="goal-row"><div class="goal-head"><b>Ходьба за неделю: ${dec(weekKm)} км</b><span class="sub">цель ~${dec(weekGoalKm, 0)} км</span></div>
       <div class="progress"><div class="fill" style="width:${pct(weekKm / weekGoalKm)}"></div><div class="mark" style="left:${pct(cy.weekday(t) / 7)}"></div></div></div>
@@ -192,7 +193,7 @@ export function renderHome() {
   parts.push(`<section class="stats">
     <div class="stat">${icon('dumbbell')}<div class="stat-val">${visits.length}</div><div class="stat-lbl">${visits.length ? `визитов с ${cy.fmtShort(visits[0]).slice(3)}` : 'визитов — первый впереди'}</div></div>
     <div class="stat">${icon('scale')}<div class="stat-val">${wl ? `${wl.lost > 0 ? '−' : wl.lost < 0 ? '+' : ''}${dec(Math.abs(wl.lost))}` : '—'}<small> кг</small></div><div class="stat-lbl">${wl ? `из цели −${S.settings.goalLossKg}` : 'внеси вес'}</div></div>
-    <div class="stat">${icon('route')}<div class="stat-val">${dec(weekKm)}<small> км</small></div><div class="stat-lbl">за неделю · ${dec(monthKm, 0)} за месяц</div></div>
+    <div class="stat">${icon('route')}<div class="stat-val">${dec(weekKm)}<small> км</small></div><div class="stat-lbl">за неделю · ${dec(monthKm)} за месяц</div></div>
   </section>`);
   parts.push(`<section class="card"><h2>Путь к цели</h2>${goalRows()}</section>`);
 
@@ -215,8 +216,10 @@ function planDayRow(date) {
   const slot = P.slotFor(date, S.plan, S.settings.startDate);
   const c = d.classId ? P.classById(date, d.classId) : null;
   const title = d.cancelled ? 'Отменено' : d.type === 'gym' ? gymTitle(slot, d.gymKind) : 'Дома: прогулка, видео или йога, Ring Fit';
-  const meta = [d.cancelled ? '' : P.plannedHours(date, S.plan), c ? `${c.time} ${c.name}` : '', dayDone(date) ? '✓ сделано' : ''].filter(Boolean).join(' · ');
-  return `<button class="plan-day ${d.type === 'gym' && !d.cancelled ? 'is-gym' : ''} ${date === cy.today() ? 'is-today' : ''}" data-a="day" data-v="${date}">
+  const done = dayDone(date);
+  const missed = date < cy.today() && !done && !d.cancelled;
+  const meta = missed ? 'не отмечено' : [d.cancelled ? '' : P.plannedHours(date, S.plan), c ? `${c.time} ${c.name}` : '', done ? '✓ сделано' : ''].filter(Boolean).join(' · ');
+  return `<button class="plan-day ${d.type === 'gym' && !d.cancelled ? 'is-gym' : ''} ${date === cy.today() ? 'is-today' : ''} ${missed ? 'is-missed' : ''}" data-a="day" data-v="${date}">
     <div class="pd-date"><b>${dayNum(date)}</b><span>${WD[cy.weekday(date)]}</span></div>
     <div class="pd-body"><div class="di-title">${esc(title)}</div><div class="di-meta">${esc(meta)}</div></div>${icon(d.type === 'gym' && !d.cancelled ? 'dumbbell' : 'walk', { size: 20 })}</button>`;
 }
@@ -381,9 +384,8 @@ export function renderDaySheet(date) {
   if (date <= t) {
     parts.push(`<p class="sub" style="margin-top:12px">Ходьба: <b>${dec(ST.dayKm(date))} км</b> · ${ST.daySteps(date).toLocaleString('ru-RU')} шагов (${esc(ST.kmSource(date))}) ${canEdit ? '<button class="btn-link" data-a="km-edit" data-v="' + date + '">Изменить</button>' : ''}</p>`);
   }
-  if (planEditable && !d.cancelled) {
-    parts.push(`<div class="row2">${btn(`${icon('swap', { size: 18 })} Перенести`, 'day-move', { v: date })}${btn(`${icon('ban', { size: 18 })} Отменить`, 'day-cancel', { v: date })}</div>`);
-  }
+  parts.push(btn('Готово', 'close', { cls: 'btn-primary btn-xl' }));
+  if (planEditable && !d.cancelled) parts.push(btn(`${icon('ban', { size: 18 })} Отменить день (болею, поездка…)`, 'day-cancel', { v: date, cls: 'btn-link' }));
   if (!canEdit) parts.push('<p class="note">Отмечать можно не дальше чем на 7 дней назад.</p>');
   return parts.join('');
 }

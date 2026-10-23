@@ -247,7 +247,8 @@ function renderWorkout() {
   const r = S.run;
   const head = `<div class="topbar"><div class="topbar-title">${esc(SLOT_NAMES[r.slot])}<span>${esc(V.weekLabel(r.week, r.phase))}${r.lightDay ? ' · лёгкий день' : ''}</span></div>
     <button class="btn btn-small btn-secondary" data-a="minimize">Свернуть</button>
-    <button class="btn btn-small btn-danger" data-a="stop">Стоп-сигналы</button></div>`;
+    ${r.stage !== 'summary' ? '<button class="btn btn-small btn-primary" data-a="end-early">Завершить</button>' : ''}
+    <button class="stop-btn" data-a="stop" aria-label="Стоп-сигналы">!</button></div>`;
   const body = {
     wellbeing: renderWellbeing, warmup: renderWarmup, exercises: renderExercises, cardio: renderCardio,
     pool: renderPool, stretch: renderStretch, summary: renderSummary,
@@ -415,7 +416,8 @@ function renderSummary() {
     <fieldset><legend>Статус визита</legend><div class="chips">${chip('Сделано', 'sum-status', 'done', r.summaryStatus === 'done')}${chip('Частично', 'sum-status', 'partial', r.summaryStatus === 'partial')}</div></fieldset>
     <fieldset><legend>Обратно пешком (~${dec(S.settings.commuteKm)} км)?</legend><div class="chips">${chip('Да', 'walk-back', 'yes', back)}${chip('Нет', 'walk-back', 'no', false)}</div></fieldset>
     <label class="field">Заметка<textarea data-f="note" rows="3">${esc(r.note || '')}</textarea></label>
-    ${btn('Завершить тренировку', 'finish', { cls: 'btn-primary btn-xl' })}${r.order.length ? btn('Вернуться к упражнениям', 'stage', { v: 'exercises', cls: 'btn-link' }) : ''}`;
+    ${btn('Завершить тренировку', 'finish', { cls: 'btn-primary btn-xl' })}${r.order.length ? btn('Вернуться к упражнениям', 'stage', { v: 'exercises', cls: 'btn-link' }) : ''}
+    ${btn('Не засчитывать — удалить эту тренировку', 'discard-run', { cls: 'btn-link danger-link' })}`;
 }
 
 // ---------- формы ----------
@@ -465,6 +467,15 @@ function renderOverlay() {
   else if (o.type === 'move') inner = V.renderMoveSheet(o.date);
   else if (o.type === 'cancel') inner = V.renderCancelSheet(o.date);
   else if (o.type === 'video') inner = V.renderVideoSheet(o.id);
+  else if (o.type === 'act') {
+    const name = { walk: 'Прогулка', ringfit: 'Ring Fit', circuit: 'Видео-тренировка', yoga: 'Йога', video: 'Видео-тренировка', other: 'Активность' }[o.kind] || 'Активность';
+    inner = `<div class="sheet-head"><h2>${esc(name)} · ${esc(cy.fmtDate(o.date))}</h2><button class="icon-btn" data-a="act-back" aria-label="Закрыть">${icon('x')}</button></div>
+      ${['circuit', 'yoga'].includes(o.kind) ? `<div class="chips">${chip('Видео', 'act-kind', 'circuit', o.kind === 'circuit')}${chip('Йога', 'act-kind', 'yoga', o.kind === 'yoga')}</div>` : ''}
+      <div class="stepper-block"><div class="stepper-label">Минуты</div><div class="stepper"><button data-a="act-min" data-v="-5" aria-label="Меньше минут">−</button><input class="val" type="text" inputmode="numeric" data-f="act-minutes" value="${o.minutes}"><button data-a="act-min" data-v="5" aria-label="Больше минут">+</button></div></div>
+      ${o.kind === 'walk' ? `<div class="stepper-block"><div class="stepper-label">Километры</div><div class="stepper"><button data-a="act-km" data-v="-0.5" aria-label="Меньше км">−</button><input class="val" type="text" inputmode="decimal" data-f="act-kmval" value="${dec(o.km)}"><button data-a="act-km" data-v="0.5" aria-label="Больше км">+</button></div></div>` : ''}
+      ${btn('Сохранить', 'act-save', { cls: 'btn-primary btn-xl' })}
+      ${o.id ? btn('Убрать отметку', 'act-del', { cls: 'btn-link danger-link' }) : btn('Отмена', 'act-back', { cls: 'btn-link' })}`;
+  }
   else if (o.type === 'videoPick') inner = V.renderVideoPick(o.date, o.kind);
   else if (o.type === 'weight') {
     inner = `<div class="sheet-head"><h2>Вес сегодня</h2><button class="icon-btn" data-a="close" aria-label="Закрыть">${icon('x')}</button></div>
@@ -559,17 +570,41 @@ const A = {
     else await addActivity({ kind: 'class', classId: id, date: d, minutes: P.CLASS_MIN });
     refresh();
   },
-  'h-toggle': async (v) => {
+  // отметка активности: окошко с минутами и км
+  'h-toggle': (v) => {
     const [d, kind] = splitV(v);
     const group = ['circuit', 'yoga', 'video'].includes(kind) ? ['circuit', 'yoga', 'video'] : [kind];
     const ex = S.activities.find((a) => a.date === d && group.includes(a.kind) && !a.commute);
-    if (ex) await removeActivity(ex);
-    else {
-      const item = P.HOME_ITEMS.find((i) => i.kind === kind) || P.HOME_ITEMS.find((i) => i.kind === 'video');
-      await addActivity({ kind, date: d, minutes: item.min, distanceKm: kind === 'walk' ? item.km : undefined });
-    }
+    const item = P.HOME_ITEMS.find((i) => i.kind === kind) || P.HOME_ITEMS.find((i) => i.kind === 'video');
+    S.overlay = {
+      type: 'act', date: d, kind: ex ? ex.kind : kind, id: ex ? ex.id : null,
+      minutes: ex ? ex.minutes ?? item.min : item.min, km: ex ? ex.distanceKm ?? item.km : item.km,
+      back: S.overlay && S.overlay.type === 'day' ? S.overlay.date : null,
+    };
+    render();
+  },
+  'act-min': (v) => { S.overlay.minutes = Math.max(5, (S.overlay.minutes || 0) + Number(v)); render(); },
+  'act-km': (v) => { S.overlay.km = Math.max(0, +((S.overlay.km || 0) + Number(v)).toFixed(1)); render(); },
+  'act-save': async () => {
+    const o = S.overlay;
+    const rec = { kind: o.kind, date: o.date, minutes: o.minutes, distanceKm: o.kind === 'walk' ? o.km : undefined };
+    if (o.id) {
+      const ex = S.activities.find((a) => a.id === o.id);
+      Object.assign(ex, rec);
+      await db.put('activities', ex);
+    } else await addActivity(rec);
+    S.overlay = o.back ? { type: 'day', date: o.back } : null;
     refresh();
   },
+  'act-del': async () => {
+    const o = S.overlay;
+    const ex = S.activities.find((a) => a.id === o.id);
+    if (ex) await removeActivity(ex);
+    S.overlay = o.back ? { type: 'day', date: o.back } : null;
+    refresh();
+  },
+  'act-kind': (v) => { S.overlay.kind = v; render(); },
+  'act-back': () => { const o = S.overlay; S.overlay = o.back ? { type: 'day', date: o.back } : null; render(); },
   'gym-start': (v) => {
     const d = P.effective(v, S.plan);
     const slot = P.slotFor(v, S.plan, S.settings.startDate) || 'A';
@@ -684,6 +719,21 @@ const A = {
   resume: () => { snd.unlock(); snd.keepAwake(true); S.overlay = null; S.screen = 'workout'; render(); },
   minimize: () => { snd.keepAwake(false); S.screen = 'home'; render(); },
   stop: () => { S.overlay = { type: 'stop', symptoms: [] }; render(); },
+  'discard-run': async () => {
+    if (!confirm('Удалить эту тренировку? Она не попадёт в историю и не засчитается.')) return;
+    const r = S.run;
+    for (const a of S.activities.filter((x) => x.sessionId === r.id)) await removeActivity(a);
+    await db.del('sessions', r.id);
+    S.run = null;
+    snd.keepAwake(false);
+    go('home');
+  },
+  'end-early': async () => {
+    const r = S.run;
+    if (!confirm('Завершить тренировку? Сделанные подходы сохранятся.')) return;
+    r.rest = null; r.timer = null; r.stage = 'summary'; r.summaryStatus = null;
+    await saveRun(); window.scrollTo(0, 0); render();
+  },
   symptom: (v) => { const l = S.overlay.symptoms; const i = l.indexOf(v); if (i >= 0) l.splice(i, 1); else l.push(v); render(); },
   'stop-finish': async () => {
     await logSymptoms(S.overlay.symptoms, true);
@@ -943,6 +993,8 @@ $app.addEventListener('change', async (e) => {
 $app.addEventListener('input', (e) => {
   const f = e.target.dataset.f;
   if (f && f.startsWith('m-')) S.form[f.slice(2)] = e.target.value;
+  if (f === 'act-minutes') { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) S.overlay.minutes = n; }
+  if (f === 'act-kmval') { const n = num(e.target.value); if (n != null) S.overlay.km = n; }
   const map = { 'v-url': 'url', 'v-title': 'title', 'v-notes': 'skipNotes', 'v-ex': 'exText', 'imp-text': 'text', 'imp-source': 'source' };
   if (f && map[f]) S.form[map[f]] = e.target.value;
 });

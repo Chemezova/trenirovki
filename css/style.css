@@ -167,7 +167,11 @@ p { margin: .35em 0; }
 .di-choices { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
 .day-item.is-done .di-icon { background: var(--sage); color: var(--on-primary); }
 .day-item.is-past, .day-item.is-suggest { box-shadow: none; background: transparent; }
-.day-item.is-past .di-title, .day-item.is-past .di-icon, .day-item.is-suggest .di-title { opacity: .55; }
+.day-item.is-past { opacity: .5; filter: grayscale(1); }
+.day-item.is-suggest .di-title { opacity: .55; }
+.stepper input.val { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--text); min-height: 56px; font: inherit; }
+.wd.is-missed { opacity: .45; background: transparent; filter: grayscale(1); }
+.plan-day.is-missed { opacity: .5; background: transparent; filter: grayscale(1); }
 .day-item.is-suggest .di-icon { background: var(--surface-2); color: var(--text-2); }
 .day-item.is-cancelled .di-title { text-decoration: line-through; opacity: .6; }
 .tick {
@@ -325,6 +329,11 @@ legend { font-weight: 650; margin-bottom: 6px; padding: 0; }
   position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; align-items: center;
   padding: calc(8px + env(safe-area-inset-top)) 16px 8px; background: var(--bg); border-bottom: 1px solid var(--line);
 }
+.stop-btn {
+  width: 40px; height: 40px; border-radius: 50%; flex: none; cursor: pointer;
+  border: 0; background: var(--danger); color: #fff; font: inherit; font-size: 1.3rem; font-weight: 800; line-height: 1;
+}
+.topbar .btn-small { padding: 6px 10px; }
 .topbar-title { flex: 1; font-weight: 700; line-height: 1.2; min-width: 0; }
 .topbar-title span { display: block; font-weight: 400; font-size: .85rem; color: var(--text-2); }
 .ex-name { font-size: 1.35rem; margin-top: 4px; }
@@ -340,7 +349,7 @@ legend { font-weight: 650; margin-bottom: 6px; padding: 0; }
 .stepper-label { font-weight: 650; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; }
 .stepper { display: grid; grid-template-columns: 60px 1fr 60px; gap: 8px; align-items: center; }
 .stepper button { min-height: 56px; font-size: 1.7rem; font-weight: 600; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer; }
-.stepper .val { text-align: center; font-size: clamp(1.6rem, 8vw, 2.2rem); font-weight: 800; font-variant-numeric: tabular-nums; }
+.stepper .val, .stepper input.val { text-align: center; font-size: clamp(1.6rem, 8vw, 2.2rem); font-weight: 800; font-variant-numeric: tabular-nums; }
 
 /* нижнее меню */
 .bottom-nav {
