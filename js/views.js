@@ -1,0 +1,405 @@
+// Экраны: главная, план, цели, настройки, карточка дня
+import { S } from './state.js';
+import * as cy from './cycle.js';
+import * as P from './plan.js';
+import * as ST from './stats.js';
+import { esc, dec, btn, chip, icon, stars, heroArt, quoteOf, barChart, lineChart } from './ui.js';
+import { HOME_KINDS } from './data.js';
+import { hasRuVoice } from './sound.js';
+
+const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+const WD = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+const toMin = (hm) => { const [h, m] = hm.split(':').map(Number); return h * 60 + m; };
+const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
+export const clockText = () => new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+export const editable = (date) => cy.daysBetween(date, cy.today()) <= 7;
+const dayNum = (d) => Number(d.slice(8));
+
+export function weekLabel(week, phase) {
+  if (week === 0) return 'Вводная неделя';
+  if (phase === 'after') return 'Цикл завершён';
+  return `Неделя ${week} из 13 · ${cy.PHASES[phase].name}`;
+}
+
+export function gymTitle(slot, kind) {
+  const base = { A: 'Силовая А', B: 'Силовая Б', cardio: 'Кардио', pool: 'Бассейн' }[slot] || 'Клуб';
+  return kind === 'full' && slot !== 'pool' ? `${base} + бассейн` : base;
+}
+
+const homeDone = (date, kind) => ST.activitiesOn(date).find((a) => (kind === 'walk' ? a.kind === 'walk' && !a.commute : kind === 'video' ? ['circuit', 'yoga', 'video'].includes(a.kind) : a.kind === kind));
+
+function stepsGoalPerDay(phase) {
+  return { p1: 7500, p2: 8500, p3: 9500, deload: 7000, after: 8000 }[phase] || 7500;
+}
+
+// ---------- элементы дня ----------
+function tick(action, v, pressed, { disabled = false, label = 'Отметить' } = {}) {
+  return `<button class="tick" data-a="${action}" data-v="${esc(v)}" aria-pressed="${pressed}" aria-label="${label}" ${disabled ? 'disabled' : ''}>${icon('check', { size: 20 })}</button>`;
+}
+
+export function dayItemsHtml(date) {
+  const d = P.effective(date, S.plan);
+  const today = cy.today();
+  const isToday = date === today;
+  const past = date < today;
+  const future = date > today;
+  const canEdit = editable(date);
+  const rows = [];
+
+  if (d.cancelled) {
+    const reason = (P.CANCEL_REASONS.find(([id]) => id === d.cancelled) || [, 'отменено'])[1];
+    rows.push(`<div class="day-item is-cancelled"><div class="di-icon">${icon('ban')}</div><div class="di-body"><div class="di-title">${d.type === 'gym' ? 'Клуб' : 'Активности'}</div><div class="di-meta">Отменено: ${esc(reason.toLowerCase())}</div></div>${canEdit ? btn('Вернуть', 'day-restore', { v: date, cls: 'btn-small btn-secondary' }) : ''}</div>`);
+  } else if (d.type === 'gym') {
+    const slot = P.slotFor(date, S.plan, S.settings.startDate);
+    const sess = ST.sessionsOn(date)[0];
+    const running = S.run && S.run.date === date;
+    const timePassed = isToday && nowMin() > toMin(P.GYM_WINDOW.end);
+    const cls = sess ? 'is-done' : (past || timePassed) && !running ? 'is-past' : '';
+    let act = '';
+    if (running) act = btn(`${icon('play', { size: 16 })} Продолжить`, 'resume', { cls: 'btn-small btn-primary' });
+    else if (sess) act = tick('gym-retro', date, true, { disabled: !sess.retro || !canEdit, label: 'Сделано' });
+    else if (isToday) act = btn(`${icon('play', { size: 16 })} Начать`, 'gym-start', { v: date, cls: 'btn-small btn-primary' });
+    else if (past) act = tick('gym-retro', date, false, { disabled: !canEdit, label: 'Отметить, что была в клубе' });
+    const meta = sess ? (sess.retro ? 'Отмечено задним числом' : `Сделано · ${{ done: 'полностью', partial: 'частично' }[sess.status]}`) : `${P.GYM_WINDOW.start}–${P.GYM_WINDOW.end} · ${P.GYM_KINDS[d.gymKind].hours}${timePassed && !running ? ' · время прошло' : ''}`;
+    rows.push(`<div class="day-item ${cls}"><div class="di-icon">${icon(slot === 'pool' ? 'swim' : 'dumbbell')}</div>
+      <div class="di-body"><div class="di-title">${esc(gymTitle(slot, d.gymKind))}</div><div class="di-meta">${esc(meta)}</div></div>${act}</div>`);
+    const commute = ST.activitiesOn(date).filter((a) => a.commute);
+    if (commute.length) rows.push(`<div class="day-item is-done"><div class="di-icon">${icon('walk')}</div><div class="di-body"><div class="di-title">Пешком до клуба</div><div class="di-meta">${dec(commute.reduce((t, a) => t + (a.distanceKm || 0), 0))} км</div></div></div>`);
+  } else {
+    for (const it of P.HOME_ITEMS) {
+      const done = homeDone(date, it.kind);
+      const kindName = done ? (HOME_KINDS.find((k) => k.id === done.kind) || {}).name : '';
+      const meta = done ? `${it.kind === 'video' ? `${kindName} · ` : ''}${done.minutes ? `${done.minutes} мин` : ''}${done.distanceKm ? ` · ${dec(done.distanceKm)} км` : ''}` : it.hint;
+      const choices = it.choices && !done && !future && canEdit ? `<div class="di-choices">${it.choices.map(([k, l]) => chip(l, 'h-toggle', `${date}|${k}`, false).replace('class="chip"', 'class="chip mini"')).join('')}</div>` : '';
+      const cls = done ? 'is-done' : past ? 'is-past' : '';
+      const act = it.choices && !done ? '' : tick('h-toggle', `${date}|${it.kind === 'video' ? (done ? done.kind : 'circuit') : it.kind}`, !!done, { disabled: future || !canEdit, label: it.name });
+      rows.push(`<div class="day-item ${cls}"><div class="di-icon">${icon(it.icon)}</div><div class="di-body"><div class="di-title">${esc(it.name)}</div><div class="di-meta">${esc(meta)}</div>${choices}</div>${act}</div>`);
+    }
+  }
+
+  // выбранное групповое занятие
+  if (d.classId && !d.cancelled) {
+    const c = P.classById(date, d.classId);
+    if (c) {
+      const attended = ST.activitiesOn(date).some((a) => a.kind === 'class' && a.classId === c.id);
+      const passed = isToday && nowMin() > toMin(c.time) + P.CLASS_MIN;
+      const cls = attended ? 'is-done' : past || passed ? 'is-past' : '';
+      rows.push(`<div class="day-item ${cls}"><div class="di-icon">${icon('group')}</div><div class="di-body"><div class="di-title">${esc(c.name)}${stars(c.stars)}</div><div class="di-meta">${c.time} · 55 мин</div></div>
+        ${tick('cls-done', `${date}|${c.id}`, attended, { disabled: future || !canEdit, label: 'Была на занятии' })}
+        ${!attended && canEdit ? `<button class="icon-btn" data-a="cls" data-v="${esc(`${date}|${c.id}`)}" aria-label="Убрать занятие">${icon('x', { size: 18 })}</button>` : ''}</div>`);
+    }
+  }
+
+  // групповые занятия клуба — серым, можно выбрать одно
+  const options = P.classesFor(date).filter((c) => c.id !== d.classId);
+  let classesHtml = '';
+  if (options.length && !past && !d.cancelled) {
+    classesHtml = `<details class="classes"><summary>Групповые занятия в клубе · ${options.length}</summary><div class="day-list">${options.map((c) => {
+      const passed = isToday && nowMin() > toMin(c.time);
+      const badge = c.level === 'care' ? '<span class="badge badge-care">осторожно</span>' : c.level === 'no' ? '<span class="badge badge-no">не рекомендую</span>' : '';
+      return `<div class="day-item is-suggest"><div class="di-icon">${icon('group')}</div><div class="di-body"><div class="di-title">${c.time} ${esc(c.name)}${stars(c.stars)}${badge}</div><div class="di-meta">${esc(c.note)}</div></div>
+        ${passed ? '' : btn(d.classId ? 'Вместо' : 'Пойду', 'cls', { v: `${date}|${c.id}`, cls: 'btn-small btn-secondary' })}</div>`;
+    }).join('')}</div><p class="note">Звёзды — польза для твоей цели. Одно занятие в день, в дополнение к залу или бассейну.</p></details>`;
+  }
+  return `<div class="day-list">${rows.join('')}</div>${classesHtml}`;
+}
+
+function dayDone(date) {
+  return ST.sessionsOn(date).length > 0 || ST.activitiesOn(date).some((a) => !a.commute);
+}
+
+function hoursShort(date) {
+  const d = P.effective(date, S.plan);
+  if (d.cancelled) return '—';
+  const h = d.type === 'gym' ? (d.gymKind === 'full' ? '3,5ч' : '2ч') : '2ч';
+  return d.classId ? `${h}+1` : h;
+}
+
+export function weekStrip(ws) {
+  const today = cy.today();
+  return `<div class="week">${P.weekDates(ws).map((date) => {
+    const d = P.effective(date, S.plan);
+    const cls = [d.type === 'gym' && !d.cancelled ? 'is-gym' : '', date === today ? 'is-today' : '', dayDone(date) ? 'is-done' : '', d.cancelled ? 'is-cancelled' : ''].join(' ');
+    const ic = d.cancelled ? 'ban' : d.type === 'gym' ? (d.gymKind === 'pool' ? 'swim' : 'dumbbell') : 'walk';
+    return `<button class="wd ${cls}" data-a="day" data-v="${date}" aria-label="${esc(cy.fmtDate(date, true))}"><span class="wd-name">${WD[cy.weekday(date)]}</span><span class="wd-num">${dayNum(date)}</span>${icon(ic, { size: 18 })}<span class="wd-hours">${hoursShort(date)}</span></button>`;
+  }).join('')}</div>`;
+}
+
+// ---------- главная ----------
+function plannedGymDates(from, to) {
+  const out = [];
+  for (let d = from; d <= to; d = cy.addDays(d, 1)) {
+    const e = P.effective(d, S.plan);
+    if (e.type === 'gym' && !e.cancelled) out.push(d);
+  }
+  return out;
+}
+
+function goalRows() {
+  const t = cy.today();
+  const goal = S.settings.goalLossKg;
+  const wl = ST.weightLoss();
+  const exp = ST.expectedLoss(t);
+  const lost = wl ? Math.max(0, wl.lost) : 0;
+  const visits = ST.clubVisitDates();
+  const from = [S.settings.startDate, visits[0]].filter(Boolean).sort()[0];
+  const planned = plannedGymDates(from, t).filter((d) => d < t || ST.sessionsOn(d).length);
+  const doneVisits = planned.filter((d) => ST.sessionsOn(d).length).length;
+  const ws = cy.weekStart(t);
+  const phase = cy.phaseOf(cy.weekOf(t, S.settings.startDate));
+  const weekKm = ST.sumRange(ST.dayKm, ws, t);
+  const weekGoalKm = (stepsGoalPerDay(phase) / ST.STEPS_PER_KM) * 7;
+  const pct = (v) => `${Math.max(0, Math.min(100, v * 100)).toFixed(1)}%`;
+  return `
+    <div class="goal-row"><div class="goal-head"><b>Вес: ${wl ? (lost > 0 ? `−${dec(lost)}` : '0') : '—'} из −${goal} кг</b><span class="sub">${exp >= 0.05 ? `по плану сейчас −${dec(exp)}` : 'старт 26.10'}</span></div>
+      <div class="progress"><div class="fill" style="width:${pct(lost / goal)}"></div><div class="mark" style="left:${pct(exp / goal)}"></div></div>
+      ${wl ? '' : '<p class="note">Внеси вес — и здесь появится твой путь.</p>'}</div>
+    <div class="goal-row"><div class="goal-head"><b>Клуб: ${doneVisits} из ${planned.length || 0} по плану</b><span class="sub">3 раза в неделю</span></div>
+      <div class="progress"><div class="fill" style="width:${pct(planned.length ? doneVisits / planned.length : 0)}"></div></div></div>
+    <div class="goal-row"><div class="goal-head"><b>Ходьба за неделю: ${dec(weekKm)} км</b><span class="sub">цель ~${dec(weekGoalKm, 0)} км</span></div>
+      <div class="progress"><div class="fill" style="width:${pct(weekKm / weekGoalKm)}"></div><div class="mark" style="left:${pct(cy.weekday(t) / 7)}"></div></div></div>
+    <div class="legend-inline"><span><i style="background:var(--sage)"></i>у тебя</span><span><i style="background:var(--coral)"></i>где по плану сегодня</span></div>`;
+}
+
+export function renderHome() {
+  const t = cy.today();
+  const start = S.settings.startDate;
+  const week = cy.weekOf(t, start, S.settings.shifts);
+  const phase = cy.phaseOf(week);
+  const d = P.effective(t, S.plan);
+  const parts = [];
+  parts.push(`<header class="app-header"><div class="titles"><div class="date">${esc(cy.capitalize(cy.fmtDate(t, true)))}</div><div class="clock"><span data-clock>${clockText()}</span> · ${esc(weekLabel(week, phase))}</div></div>
+    <button class="icon-btn" data-a="go" data-v="settings" aria-label="Настройки">${icon('gear')}</button></header>`);
+  parts.push(`<section class="hero">${heroArt(d.type === 'gym' && !d.cancelled ? 'water' : 'park')}<div class="hero-text"><p class="hero-quote">${esc(quoteOf(t))}</p><p class="hero-sub">${d.cancelled ? 'Сегодня отдыхаем и восстанавливаемся' : d.type === 'gym' ? 'Сегодня день клуба' : 'Сегодня — движение на свежем воздухе'}</p></div></section>`);
+
+  if (S.run) parts.push(`<section class="banner"><p><b>Тренировка не закончена.</b> Начата в ${new Date(S.run.checkInAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}.</p>${btn('Продолжить', 'resume', { cls: 'btn-primary btn-small' })}</section>`);
+  const cp = cy.checkpointNear(t, start);
+  if (cp != null && !S.measurements.some((m) => m.checkpoint === cp && m.waistCm != null)) {
+    parts.push(`<section class="banner"><p><b>Контрольный замер${cp === 0 ? ' 0' : ` после недели ${cp}`}.</b> Утром, натощак.</p>${btn('Записать', 'go', { v: 'measure', cls: 'btn-small btn-secondary' })}</section>`);
+  }
+  const lb = S.settings.lastBackupAt;
+  if (S.sessions.length + S.measurements.length >= 3 && (!lb || cy.daysBetween(lb.slice(0, 10), t) > 14)) {
+    parts.push(`<section class="banner"><p><b>Сохрани копию данных</b> — всё хранится только на телефоне.</p>${btn('Сохранить', 'export', { cls: 'btn-small btn-secondary' })}</section>`);
+  }
+
+  const visits = ST.clubVisitDates();
+  const wl = ST.weightLoss();
+  const ws = cy.weekStart(t);
+  const weekKm = ST.sumRange(ST.dayKm, ws, t);
+  const monthKm = ST.sumRange(ST.dayKm, `${t.slice(0, 8)}01`, t);
+  parts.push(`<section class="stats">
+    <div class="stat">${icon('dumbbell')}<div class="stat-val">${visits.length}</div><div class="stat-lbl">${visits.length ? `визитов с ${cy.fmtShort(visits[0]).slice(3)}` : 'визитов — первый впереди'}</div></div>
+    <div class="stat">${icon('scale')}<div class="stat-val">${wl ? `${wl.lost > 0 ? '−' : wl.lost < 0 ? '+' : ''}${dec(Math.abs(wl.lost))}` : '—'}<small> кг</small></div><div class="stat-lbl">${wl ? `из цели −${S.settings.goalLossKg}` : 'внеси вес'}</div></div>
+    <div class="stat">${icon('route')}<div class="stat-val">${dec(weekKm)}<small> км</small></div><div class="stat-lbl">за неделю · ${dec(monthKm, 0)} за месяц</div></div>
+  </section>`);
+  parts.push(`<section class="card"><h2>Путь к цели</h2>${goalRows()}</section>`);
+
+  const allDone = dayDone(t);
+  parts.push(`<h2 class="section-title">Сегодня <button class="btn-link" data-a="day" data-v="${t}">Изменить план</button></h2>${dayItemsHtml(t)}${allDone ? '<p class="done-note">День засчитан — так держать!</p>' : ''}`);
+  parts.push(`<h2 class="section-title">Неделя <button class="btn-link" data-a="tab" data-v="calendar">План</button></h2>${weekStrip(ws)}`);
+  return parts.join('');
+}
+
+// ---------- план ----------
+function rangeTitle(ws) {
+  const we = cy.addDays(ws, 6);
+  const a = cy.fmtDate(ws).split(' ');
+  const b = cy.fmtDate(we).split(' ');
+  return a[1] === b[1] ? `${a[0]}–${b[0]} ${b[1]}` : `${cy.fmtDate(ws)} – ${cy.fmtDate(we)}`;
+}
+
+function planDayRow(date) {
+  const d = P.effective(date, S.plan);
+  const slot = P.slotFor(date, S.plan, S.settings.startDate);
+  const c = d.classId ? P.classById(date, d.classId) : null;
+  const title = d.cancelled ? 'Отменено' : d.type === 'gym' ? gymTitle(slot, d.gymKind) : 'Дома: прогулка, видео или йога, Ring Fit';
+  const meta = [d.cancelled ? '' : P.plannedHours(date, S.plan), c ? `${c.time} ${c.name}` : '', dayDone(date) ? '✓ сделано' : ''].filter(Boolean).join(' · ');
+  return `<button class="plan-day ${d.type === 'gym' && !d.cancelled ? 'is-gym' : ''} ${date === cy.today() ? 'is-today' : ''}" data-a="day" data-v="${date}">
+    <div class="pd-date"><b>${dayNum(date)}</b><span>${WD[cy.weekday(date)]}</span></div>
+    <div class="pd-body"><div class="di-title">${esc(title)}</div><div class="di-meta">${esc(meta)}</div></div>${icon(d.type === 'gym' && !d.cancelled ? 'dumbbell' : 'walk', { size: 20 })}</button>`;
+}
+
+function monthView() {
+  const t = cy.today();
+  const base = cy.parse(`${t.slice(0, 8)}01`);
+  base.setMonth(base.getMonth() + S.cal.month);
+  const first = cy.isoDate(base);
+  const last = cy.isoDate(new Date(base.getFullYear(), base.getMonth() + 1, 0));
+  const lead = cy.weekday(first) - 1;
+  const cells = [];
+  for (let i = 0; i < lead; i++) cells.push('<span class="cell blank"></span>');
+  for (let d = first; d <= last; d = cy.addDays(d, 1)) {
+    const min = d <= t ? ST.dayMinutes(d) : 0;
+    const lvl = ST.level(min);
+    cells.push(`<button class="cell l${lvl} ${d === t ? 'is-today' : ''} ${d > t ? 'is-future' : ''}" data-a="day" data-v="${d}" aria-label="${esc(`${cy.fmtDate(d)}: ${min ? `${min} мин активности` : 'нет активности'}`)}">${dayNum(d)}</button>`);
+  }
+  const to = last < t ? last : t;
+  const active = first <= t;
+  const sum = (fn) => (active ? ST.sumRange(fn, first, to) : 0);
+  const days = active ? cy.daysBetween(first, to) + 1 : 0;
+  let activeDays = 0;
+  for (let d = first; active && d <= to; d = cy.addDays(d, 1)) if (ST.dayMinutes(d) > 0) activeDays++;
+  const clubDays = ST.clubVisitDates().filter((d) => d >= first && d <= last).length;
+  const health = Object.keys(S.health).some((d) => d >= first && d <= last);
+
+  // по неделям месяца
+  const weeks = [];
+  for (let ws = cy.weekStart(first); ws <= last; ws = cy.addDays(ws, 7)) {
+    const a = ws < first ? first : ws;
+    const we = cy.addDays(ws, 6);
+    const end = we > last ? last : we;
+    const b = end > t ? t : end;
+    const has = a <= b;
+    weeks.push({
+      label: `${dayNum(a)}–${dayNum(end)}`,
+      current: t >= ws && t <= we,
+      km: has ? ST.sumRange(ST.dayKm, a, b) : 0,
+      club: ST.clubVisitDates().filter((d) => d >= a && d <= end).length,
+      swim: has ? ST.sumRange(ST.swimMinutesOn, a, b) : 0,
+      home: has ? ST.sumRange(ST.homeMinutesOn, a, b) : 0,
+    });
+  }
+  const monthName = `${MONTHS[base.getMonth()]} ${base.getFullYear()}`;
+  return `<div class="nav-row"><button class="icon-btn" data-a="cal-nav" data-v="-1" aria-label="Предыдущий месяц">${icon('chevL')}</button><div class="nav-title">${esc(cy.capitalize(monthName))}</div><button class="icon-btn" data-a="cal-nav" data-v="1" aria-label="Следующий месяц">${icon('chevR')}</button></div>
+    <section class="card"><div class="heat">${WD.slice(1).map((w) => `<span class="hd">${w}</span>`).join('')}${cells.join('')}</div>
+      <div class="heat-legend">меньше ${[1, 2, 3, 4, 5].map((l) => `<i style="background:var(--heat-${l})"></i>`).join('')} больше · до 30 мин → 3+ часа</div></section>
+    <section class="card"><h2>Итоги месяца</h2><div class="kpis">
+      <div class="kpi"><b>${activeDays} из ${days}</b><span>активных дней</span></div>
+      <div class="kpi"><b>${clubDays}</b><span>визитов в клуб</span></div>
+      <div class="kpi"><b>${health ? '' : '≈'}${Math.round(sum(ST.daySteps)).toLocaleString('ru-RU')}</b><span>шагов${health ? '' : ' (оценка)'}</span></div>
+      <div class="kpi"><b>${dec(sum(ST.dayKm))} км</b><span>прошла</span></div>
+      <div class="kpi"><b>${sum(ST.swimMinutesOn)} мин</b><span>в бассейне</span></div>
+      <div class="kpi"><b>${sum(ST.homeMinutesOn)} мин</b><span>занятий дома</span></div></div></section>
+    <section class="card"><h2>Километры по неделям</h2>${barChart(weeks.map((w) => ({ label: w.label, value: w.km, current: w.current })), { unit: 'км', fmt: (v) => dec(v) })}</section>
+    <section class="card"><h2>Визиты в клуб по неделям</h2>${barChart(weeks.map((w) => ({ label: w.label, value: w.club, current: w.current })), { goal: 3 })}</section>
+    <section class="card"><h2>Бассейн и дом, минуты</h2>${barChart(weeks.map((w) => ({ label: w.label, value: w.swim + w.home, current: w.current, title: `${w.label}: бассейн ${w.swim} мин, дома ${w.home} мин` })), { unit: 'мин' })}</section>`;
+}
+
+export function renderCalendar() {
+  const t = cy.today();
+  const parts = [`<header class="page-title"><h1>План</h1><button class="icon-btn" data-a="go" data-v="settings" aria-label="Настройки">${icon('gear')}</button></header>`,
+    `<div class="seg" role="group"><button data-a="cal-mode" data-v="week" aria-pressed="${S.cal.mode === 'week'}">Неделя</button><button data-a="cal-mode" data-v="month" aria-pressed="${S.cal.mode === 'month'}">Месяц</button></div>`];
+  if (S.cal.mode === 'month') return parts.join('') + monthView();
+
+  const ws = cy.addDays(cy.weekStart(t), 7 * S.cal.week);
+  const week = cy.weekOf(ws < S.settings.startDate && cy.addDays(ws, 6) >= S.settings.startDate ? S.settings.startDate : ws, S.settings.startDate);
+  const phase = cy.phaseOf(week);
+  const why = P.PHASE_WHY[week === 0 ? 'intro' : phase];
+  parts.push(`<div class="nav-row"><button class="icon-btn" data-a="cal-nav" data-v="-1" aria-label="Предыдущая неделя">${icon('chevL')}</button><div class="nav-title">${esc(rangeTitle(ws))}</div><button class="icon-btn" data-a="cal-nav" data-v="1" aria-label="Следующая неделя">${icon('chevR')}</button></div>`);
+  parts.push(`<section class="card"><h2>${esc(weekLabel(week, phase))}</h2><p><b>Что делаем:</b> ${esc(why.what)}</p><p><b>Зачем:</b> ${esc(why.why)}</p>
+    <details class="classes"><summary>Как замеряем результат</summary><p>${esc(P.MEASURE_HOW)}</p></details></section>`);
+  parts.push(`<p class="note">Тапни день, чтобы сделать его днём зала, выбрать групповое занятие, перенести или отменить.</p>`);
+  parts.push(P.weekDates(ws).map(planDayRow).join(''));
+  return parts.join('');
+}
+
+// ---------- цели и прогресс ----------
+export function renderGoals() {
+  const start = S.settings.startDate;
+  const end = cy.addDays(start, 90);
+  const w = ST.weights();
+  const wl = ST.weightLoss();
+  const from = [w[0] && w[0].date, cy.addDays(start, -3)].filter(Boolean).sort()[0];
+  const total = cy.daysBetween(from, end);
+  const X = (d) => cy.daysBetween(from, d) / total;
+  const xLabels = [from, cy.addDays(start, 28), cy.addDays(start, 56), end].map((d) => ({ x: X(d), label: cy.fmtShort(d).slice(3) }));
+  const weightChart = w.length
+    ? lineChart(w.map((m) => ({ x: X(m.date), y: m.weightKg, muted: m.premenstrual, label: `${cy.fmtShort(m.date)}: ${dec(m.weightKg)} кг${m.premenstrual ? ' (непоказательно)' : ''}` })),
+      { target: [{ x: X(w[0].date), y: w[0].weightKg }, { x: 1, y: w[0].weightKg - S.settings.goalLossKg }], xLabels })
+    : '<p class="note">Пока нет записей веса.</p>';
+  const waist = S.measurements.filter((m) => m.waistCm != null).sort((a, b) => a.date.localeCompare(b.date));
+  const waistChart = waist.length
+    ? lineChart(waist.map((m) => ({ x: X(m.date), y: m.waistCm, muted: m.premenstrual, label: `${cy.fmtShort(m.date)}: ${dec(m.waistCm)} см` })), { target: [{ x: X(waist[0].date), y: waist[0].waistCm }, { x: 1, y: waist[0].waistCm - 3 }], xLabels })
+    : '<p class="note">Талия появится после первого замера.</p>';
+
+  const t = cy.today();
+  const weeks = [];
+  for (let i = 7; i >= 0; i--) {
+    const ws = cy.addDays(cy.weekStart(t), -7 * i);
+    const we = cy.addDays(ws, 6);
+    weeks.push({ label: `${dayNum(ws)}.${ws.slice(5, 7)}`, current: i === 0, club: ST.clubVisitDates().filter((d) => d >= ws && d <= we).length, km: ST.sumRange(ST.dayKm, ws, we > t ? t : we) });
+  }
+  const measures = [...S.measurements].sort((a, b) => b.date.localeCompare(a.date));
+  return `<header class="page-title"><h1>Цели и прогресс</h1><button class="icon-btn" data-a="go" data-v="settings" aria-label="Настройки">${icon('gear')}</button></header>
+    <section class="card"><h2>Мои цели к ${cy.fmtDate(end)}</h2>
+      <ul class="list"><li>Минус ${S.settings.goalLossKg} кг жира${wl && wl.lost > 0 ? ` · уже −${dec(wl.lost)}` : ''}</li><li>Минус 2–4 см на талии</li><li>3 визита в клуб в неделю</li><li>Шаги: 7–8 тыс. → 9–10 тыс. в день</li></ul>
+      ${goalRows()}</section>
+    <div class="grid2">${btn(`${icon('scale', { size: 18 })} Вес`, 'weight-open')}${btn(`${icon('plus', { size: 18 })} Замер`, 'go', { v: 'measure' })}${btn(`${icon('heart', { size: 18 })} Шаги из Здоровья`, 'health-paste')}${btn(`${icon('walk', { size: 18 })} Активность`, 'go', { v: 'homeLog' })}</div>
+    <section class="card"><h2>Вес, кг</h2>${weightChart}<div class="legend-inline"><span><i style="background:var(--sage)"></i>факт</span><span><i style="background:var(--coral)"></i>план к цели</span></div></section>
+    <section class="card"><h2>Талия, см</h2>${waistChart}</section>
+    <section class="card"><h2>Визиты в клуб по неделям</h2>${barChart(weeks.map((x) => ({ label: x.label, value: x.club, current: x.current })), { goal: 3 })}</section>
+    <section class="card"><h2>Километры по неделям</h2>${barChart(weeks.map((x) => ({ label: x.label, value: x.km, current: x.current })), { fmt: (v) => dec(v, 0) })}</section>
+    <section class="card"><h2>Замеры</h2>${measures.length ? measures.map((m) => `<div class="row-btn"><b>${cy.fmtShort(m.date)}${m.checkpoint != null ? ` · контрольный ${m.checkpoint}` : ''}${m.premenstrual ? ' · непоказательно' : ''}</b><span>${[['weightKg', 'вес'], ['waistCm', 'талия'], ['bellyNavelCm', 'живот'], ['hipsCm', 'бёдра'], ['thighCm', 'бедро']].filter(([k]) => m[k] != null).map(([k, l]) => `${l} ${dec(m[k])}`).join(' · ')}</span><button class="btn-link danger-link" data-a="del-measure" data-v="${m.id}">Удалить</button></div>`).join('') : '<p class="note">Пока пусто.</p>'}</section>`;
+}
+
+// ---------- настройки ----------
+export function renderSettings() {
+  const s = S.settings;
+  return `<header class="page-title"><button class="icon-btn" data-a="go" data-v="back" aria-label="Назад">${icon('back')}</button><h1>Настройки</h1></header>
+    <section class="card"><h2>Цикл и цель</h2>
+      <label class="field">Старт цикла (понедельник недели 1)<input type="date" data-f="startDate" value="${esc(s.startDate)}"></label>
+      <label class="field">Цель, минус кг<input type="text" inputmode="decimal" data-f="goalLossKg" value="${esc(dec(s.goalLossKg))}"></label>
+      <label class="field">Пешком до клуба, км в одну сторону<input type="text" inputmode="decimal" data-f="commuteKm" value="${esc(dec(s.commuteKm))}"></label></section>
+    <section class="card"><h2>Звук и голос</h2>
+      <div class="chips">${chip('Голос включён', 'voice', 'on', s.voice)}${chip('Без голоса', 'voice', 'off', !s.voice)}</div>
+      ${btn('Проверить звук и голос', 'test-sound')}
+      <p class="note">На iPhone выключи беззвучный режим (переключатель сбоку) — иначе сигналов таймера может не быть.${hasRuVoice() ? '' : ' Русский голос не найден: скачай в Настройки iPhone → Универсальный доступ → Устный контент → Голоса.'}</p></section>
+    <section class="card"><h2>Шаги из Apple Здоровья</h2>
+      <p>Веб-приложение не может читать Здоровье напрямую, поэтому шаги передаёт «Команда» iPhone через буфер обмена.</p>
+      <details class="classes"><summary>Как сделать Команду (5 минут, один раз)</summary><ol class="list">
+        <li>Открой «Команды» → «+» → назови «Тренировки: шаги».</li>
+        <li>Действие «Найти образцы здоровья»: тип «Шаги», «Дата начала» — «Сегодня». Затем «Вычислить статистику» → «Сумма».</li>
+        <li>Ещё раз «Найти образцы здоровья»: «Расстояние ходьбы и бега», «Сегодня» → «Вычислить статистику» → «Сумма».</li>
+        <li>Действие «Текст»: <code>TR;</code> + «Текущая дата» в формате <code>yyyy-MM-dd</code> + <code>;</code> + сумма шагов + <code>;</code> + сумма расстояния.</li>
+        <li>Действие «Скопировать в буфер обмена».</li>
+        <li>По желанию: «Автоматизация» → «Время суток» 21:30 → эта Команда.</li>
+        <li>Потом в приложении: «Цели» → «Шаги из Здоровья». Можно вставить сразу несколько строк — по одной на день.</li></ol>
+        <p class="note">Названия действий могут немного отличаться в разных версиях iOS.</p></details>
+      ${btn('Вставить шаги из буфера', 'health-paste')}</section>
+    <section class="card"><h2>Копия данных</h2><p>Всё хранится только на этом телефоне. ${s.lastBackupAt ? `Последняя копия: ${cy.fmtDate(s.lastBackupAt.slice(0, 10))}.` : 'Копий ещё не было.'}</p>
+      ${btn('Сохранить копию', 'export', { cls: 'btn-primary' })}
+      <label class="btn btn-secondary file-btn">Загрузить из копии<input type="file" accept="application/json,.json" data-f="import" hidden></label></section>
+    ${btn('Стереть все данные', 'reset', { cls: 'btn-link danger-link' })}
+    <p class="note center">Версия 0.2 · ${S.sessions.length} тренировок · ${S.activities.length} активностей · ${S.measurements.length} замеров</p>`;
+}
+
+// ---------- карточка дня ----------
+export function renderDaySheet(date) {
+  const d = P.effective(date, S.plan);
+  const t = cy.today();
+  const canEdit = editable(date);
+  const planEditable = date >= t;
+  const parts = [`<div class="sheet-head"><h2>${esc(cy.capitalize(cy.fmtDate(date, true)))}</h2><button class="icon-btn" data-a="close" aria-label="Закрыть">${icon('x')}</button></div>`];
+  if (planEditable && !d.cancelled) {
+    parts.push(`<div class="seg" role="group"><button data-a="day-type" data-v="${date}|gym" aria-pressed="${d.type === 'gym'}">День клуба</button><button data-a="day-type" data-v="${date}|home" aria-pressed="${d.type === 'home'}">Дома</button></div>`);
+    if (d.type === 'gym') parts.push(`<div class="chips">${Object.entries(P.GYM_KINDS).map(([k, v]) => chip(v.name, 'gym-kind', `${date}|${k}`, d.gymKind === k)).join('')}</div>`);
+  }
+  parts.push(`<div style="margin-top:12px">${dayItemsHtml(date)}</div>`);
+  if (date <= t) {
+    parts.push(`<p class="sub" style="margin-top:12px">Ходьба: <b>${dec(ST.dayKm(date))} км</b> · ${ST.daySteps(date).toLocaleString('ru-RU')} шагов (${esc(ST.kmSource(date))}) ${canEdit ? '<button class="btn-link" data-a="km-edit" data-v="' + date + '">Изменить</button>' : ''}</p>`);
+  }
+  if (planEditable && !d.cancelled) {
+    parts.push(`<div class="row2">${btn(`${icon('swap', { size: 18 })} Перенести`, 'day-move', { v: date })}${btn(`${icon('ban', { size: 18 })} Отменить`, 'day-cancel', { v: date })}</div>`);
+  }
+  if (!canEdit) parts.push('<p class="note">Отмечать можно не дальше чем на 7 дней назад.</p>');
+  return parts.join('');
+}
+
+export function renderMoveSheet(from) {
+  const t = cy.today();
+  const options = [];
+  for (let i = 0; i <= 14; i++) {
+    const d = cy.addDays(t, i);
+    if (d === from) continue;
+    const e = P.effective(d, S.plan);
+    options.push(`<button class="row-btn" data-a="move-to" data-v="${from}|${d}"><b>${esc(cy.capitalize(cy.fmtDate(d, true)))}</b><span>${e.cancelled ? 'отменено' : e.type === 'gym' ? 'день клуба' : 'дома'}</span></button>`);
+  }
+  return `<div class="sheet-head"><h2>Поменять местами с…</h2><button class="icon-btn" data-a="day" data-v="${from}" aria-label="Назад">${icon('x')}</button></div>
+    <p class="note">Планы двух дней поменяются местами. Групповые занятия остаются в своих днях — у них своё расписание.</p>${options.join('')}`;
+}
+
+export function renderCancelSheet(date) {
+  return `<div class="sheet-head"><h2>Отменить ${esc(cy.fmtDate(date))}</h2><button class="icon-btn" data-a="day" data-v="${date}" aria-label="Назад">${icon('x')}</button></div>
+    <p>Почему?</p><div class="chips">${P.CANCEL_REASONS.map(([id, l]) => chip(l, 'cancel-reason', `${date}|${id}`, false)).join('')}</div>
+    <p class="note">Отменённый день не считается пропуском. Если болеешь несколько дней — отмени каждый.</p>`;
+}
