@@ -8,7 +8,7 @@ import { suggest, roundToStep } from './progression.js';
 import { esc, dec, btn, chip, icon } from './ui.js';
 import * as V from './views.js';
 import {
-  EXERCISES, EX_BY_ID, STRETCHES, poolPlan, CARDIO_MACHINES, STOP_MAIN, STOP_SECONDARY, SYMPTOMS, HOME_KINDS,
+  EXERCISES, EX_BY_ID, STRETCHES, poolPlan, CARDIO_MACHINES, STOP_MAIN, STOP_SECONDARY, SYMPTOMS, HOME_KINDS, TABLE_PROMPT,
 } from './data.js';
 
 const $app = document.getElementById('app');
@@ -31,6 +31,7 @@ async function load() {
     if (key === 'settings') S.settings = { ...DEFAULT_SETTINGS, ...value };
     else if (key === 'plan') S.plan = { days: {}, ...value };
     else if (key === 'health') S.health = value || {};
+    else if (key === 'videos') S.videos = value || [];
     else if (key.startsWith('ex:')) S.exSettings[key.slice(3)] = value;
   }
   const sessions = await db.getAll('sessions');
@@ -52,6 +53,7 @@ async function load() {
 const saveSettings = () => db.kvSet('settings', S.settings);
 const savePlan = () => db.kvSet('plan', S.plan);
 const saveHealth = () => db.kvSet('health', S.health);
+const saveVideos = () => db.kvSet('videos', S.videos);
 const saveExSettings = (id) => db.kvSet(`ex:${id}`, S.exSettings[id]);
 const saveRun = () => (S.run ? db.put('sessions', S.run) : Promise.resolve());
 
@@ -462,6 +464,8 @@ function renderOverlay() {
   if (o.type === 'day') inner = V.renderDaySheet(o.date);
   else if (o.type === 'move') inner = V.renderMoveSheet(o.date);
   else if (o.type === 'cancel') inner = V.renderCancelSheet(o.date);
+  else if (o.type === 'video') inner = V.renderVideoSheet(o.id);
+  else if (o.type === 'videoPick') inner = V.renderVideoPick(o.date, o.kind);
   else if (o.type === 'weight') {
     inner = `<div class="sheet-head"><h2>Вес сегодня</h2><button class="icon-btn" data-a="close" aria-label="Закрыть">${icon('x')}</button></div>
       <p class="sub">Утром, натощак. В графике считается средняя за неделю.</p>
@@ -505,13 +509,16 @@ function go(screen) {
   else if (['home', 'calendar', 'goals'].includes(S.screen)) prevScreen = S.screen;
   S.screen = screen;
   S.overlay = null;
-  if (screen !== 'measure' && screen !== 'homeLog') S.form = {};
+  if (!['measure', 'homeLog', 'videoForm', 'videoImport'].includes(screen)) S.form = {};
   window.scrollTo(0, 0);
   render();
 }
 
 function renderMain() {
-  const screens = { home: V.renderHome, calendar: V.renderCalendar, goals: V.renderGoals, settings: V.renderSettings, measure: renderMeasure, homeLog: renderHomeLog };
+  const screens = {
+    home: V.renderHome, calendar: V.renderCalendar, goals: V.renderGoals, settings: V.renderSettings, measure: renderMeasure, homeLog: renderHomeLog,
+    videos: V.renderVideos, videoForm: V.renderVideoForm, videoImport: V.renderVideoImport,
+  };
   const body = (screens[S.screen] || V.renderHome)();
   const active = TABS.some(([id]) => id === S.screen) ? S.screen : prevScreen;
   return `<main class="page">${body}</main><nav class="bottom-nav">${TABS.map(([id, l, ic]) => `<button data-a="tab" data-v="${id}" ${active === id ? 'aria-current="page"' : ''}>${icon(ic, { size: 24 })}${l}</button>`).join('')}</nav>`;
@@ -604,6 +611,56 @@ const A = {
     await saveHealth();
     alert(`Шаги загружены: ${dates.map((d) => `${cy.fmtShort(d)} — ${(parsed[d].steps || 0).toLocaleString('ru-RU')}`).join(', ')}`);
     refresh();
+  },
+
+  // библиотека видео
+  'video-new': () => { S.form = { kind: 'video', vkind: 'circuit', minutes: 30, checks: {} }; S.screen = 'videoForm'; S.overlay = null; render(); },
+  'video-edit': (id) => {
+    const v = S.videos.find((x) => x.id === id);
+    S.form = { kind: 'video', id, url: v.url, title: v.title, vkind: v.kind, minutes: v.minutes, checks: { ...(v.checks || {}) }, skipNotes: v.skipNotes || '', exText: (v.exercises || []).map((e) => [e.name, e.dose, e.tech].filter(Boolean).join(' — ')).join('\n') };
+    S.screen = 'videoForm'; S.overlay = null; render();
+  },
+  'v-kind': (v) => { S.form.vkind = v; render(); },
+  'v-min': (v) => { S.form.minutes = Math.max(5, (S.form.minutes || 30) + Number(v)); render(); },
+  'video-save': async () => {
+    const f = S.form;
+    const exercises = String(f.exText || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => { const [name, dose = '', ...tech] = l.split(/\s+—\s+|\s+-\s+/); return { name, dose, tech: tech.join(' — ') }; });
+    const tgPost = String(f.url || '').match(/\/(\d+)\s*$/);
+    const rec = {
+      id: f.id || uid(), url: (f.url || '').trim(), title: (f.title || '').trim() || (tgPost ? `Видео ${tgPost[1]}` : 'Видео'),
+      kind: f.vkind || 'circuit', minutes: f.minutes || 30, checks: f.checks || {}, skipNotes: f.skipNotes || '', exercises,
+      order: (S.videos.find((x) => x.id === f.id) || {}).order, addedAt: (S.videos.find((x) => x.id === f.id) || {}).addedAt || nowISO(),
+    };
+    S.videos = S.videos.filter((x) => x.id !== rec.id).concat(rec);
+    await saveVideos();
+    S.form = {}; S.screen = 'videos'; S.overlay = { type: 'video', id: rec.id }; render();
+  },
+  'video-del': async (id) => { if (!confirm('Удалить видео из библиотеки?')) return; S.videos = S.videos.filter((x) => x.id !== id); await saveVideos(); S.overlay = null; render(); },
+  'video-open': (id) => { S.overlay = { type: 'video', id }; render(); },
+  'video-pick': (v) => { const [date, kind] = splitV(v); S.overlay = { type: 'videoPick', date, kind }; render(); },
+  'video-done': async (v) => {
+    const [date, id] = splitV(v);
+    const vid = S.videos.find((x) => x.id === id);
+    const old = S.activities.find((a) => a.date === date && ['circuit', 'yoga', 'video'].includes(a.kind));
+    if (old) await removeActivity(old);
+    await addActivity({ kind: vid.kind === 'yoga' ? 'yoga' : 'circuit', date, minutes: vid.minutes, videoId: id });
+    S.overlay = null; refresh();
+  },
+  'copy-prompt': async () => {
+    try { await navigator.clipboard.writeText(TABLE_PROMPT); alert('Задание скопировано.'); } catch (e) { prompt('Скопируй задание:', TABLE_PROMPT); }
+  },
+  'video-import': async () => {
+    const items = V.parseVideoTable(S.form.text || '', (S.form.source ?? 'Модельная фигура').trim());
+    if (!items.length) { alert('Не нашла строк. Формат: День;Упражнение;Подходы;Техника;Ссылка'); return; }
+    const risky = items.filter((it) => V.videoRisks(it).length).length;
+    if (!confirm(`Добавить ${items.length} видео (${items.reduce((t, it) => t + it.exercises.length, 0)} упражнений)? Опасные упражнения найдены в ${risky} из них — замены будут в карточках.`)) return;
+    for (const it of items) {
+      const same = S.videos.find((x) => x.title === it.title);
+      const rec = { id: same ? same.id : uid(), kind: 'circuit', minutes: 30, checks: {}, skipNotes: same ? same.skipNotes : '', addedAt: nowISO(), ...it };
+      S.videos = S.videos.filter((x) => x.id !== rec.id).concat(rec);
+    }
+    await saveVideos();
+    S.form = {}; go('videos');
   },
 
   // вес
@@ -875,6 +932,9 @@ $app.addEventListener('change', async (e) => {
   else if (f === 'h-date') S.form.date = v;
   else if (f === 'h-breath') S.form.breath = e.target.checked;
   else if (f === 'wt-pm') S.overlay.pm = e.target.checked;
+  else if (f === 'v-check') { S.form.checks = { ...(S.form.checks || {}), [e.target.dataset.k]: e.target.checked }; }
+  else if (f === 'v-ex') { S.form.exText = v; render(); }
+  else if (['v-url', 'v-title', 'v-notes', 'imp-text', 'imp-source'].includes(f)) S.form[{ 'v-url': 'url', 'v-title': 'title', 'v-notes': 'skipNotes', 'imp-text': 'text', 'imp-source': 'source' }[f]] = v;
   else if (f === 'startDate' && v) { S.settings.startDate = v; await saveSettings(); render(); }
   else if (f === 'commuteKm' || f === 'goalLossKg') { const n = num(v); if (n != null) { S.settings[f] = n; await saveSettings(); } }
   else if (f === 'import' && e.target.files[0]) doImport(e.target.files[0]);
@@ -883,6 +943,8 @@ $app.addEventListener('change', async (e) => {
 $app.addEventListener('input', (e) => {
   const f = e.target.dataset.f;
   if (f && f.startsWith('m-')) S.form[f.slice(2)] = e.target.value;
+  const map = { 'v-url': 'url', 'v-title': 'title', 'v-notes': 'skipNotes', 'v-ex': 'exText', 'imp-text': 'text', 'imp-source': 'source' };
+  if (f && map[f]) S.form[map[f]] = e.target.value;
 });
 
 function render() {

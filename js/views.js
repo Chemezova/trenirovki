@@ -4,7 +4,7 @@ import * as cy from './cycle.js';
 import * as P from './plan.js';
 import * as ST from './stats.js';
 import { esc, dec, btn, chip, icon, stars, heroArt, quoteOf, barChart, lineChart } from './ui.js';
-import { HOME_KINDS } from './data.js';
+import { HOME_KINDS, SWAPS, TABLE_PROMPT } from './data.js';
 import { hasRuVoice } from './sound.js';
 
 const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
@@ -68,9 +68,11 @@ export function dayItemsHtml(date) {
   } else {
     for (const it of P.HOME_ITEMS) {
       const done = homeDone(date, it.kind);
+      const vid = done && done.videoId ? S.videos.find((v) => v.id === done.videoId) : null;
       const kindName = done ? (HOME_KINDS.find((k) => k.id === done.kind) || {}).name : '';
-      const meta = done ? `${it.kind === 'video' ? `${kindName} · ` : ''}${done.minutes ? `${done.minutes} мин` : ''}${done.distanceKm ? ` · ${dec(done.distanceKm)} км` : ''}` : it.hint;
-      const choices = it.choices && !done && !future && canEdit ? `<div class="di-choices">${it.choices.map(([k, l]) => chip(l, 'h-toggle', `${date}|${k}`, false).replace('class="chip"', 'class="chip mini"')).join('')}</div>` : '';
+      const meta = done ? `${it.kind === 'video' ? `${vid ? vid.title : kindName} · ` : ''}${done.minutes ? `${done.minutes} мин` : ''}${done.distanceKm ? ` · ${dec(done.distanceKm)} км` : ''}` : it.hint;
+      const choices = it.choices && !done && !future && canEdit
+        ? `<div class="di-choices">${it.choices.map(([k, l]) => chip(l, S.videos.some((v) => v.kind === k) ? 'video-pick' : 'h-toggle', `${date}|${k}`, false).replace('class="chip"', 'class="chip mini"')).join('')}</div>` : '';
       const cls = done ? 'is-done' : past ? 'is-past' : '';
       const act = it.choices && !done ? '' : tick('h-toggle', `${date}|${it.kind === 'video' ? (done ? done.kind : 'circuit') : it.kind}`, !!done, { disabled: future || !canEdit, label: it.name });
       rows.push(`<div class="day-item ${cls}"><div class="di-icon">${icon(it.icon)}</div><div class="di-body"><div class="di-title">${esc(it.name)}</div><div class="di-meta">${esc(meta)}</div>${choices}</div>${act}</div>`);
@@ -324,7 +326,7 @@ export function renderGoals() {
     <section class="card"><h2>Мои цели к ${cy.fmtDate(end)}</h2>
       <ul class="list"><li>Минус ${S.settings.goalLossKg} кг жира${wl && wl.lost > 0 ? ` · уже −${dec(wl.lost)}` : ''}</li><li>Минус 2–4 см на талии</li><li>3 визита в клуб в неделю</li><li>Шаги: 7–8 тыс. → 9–10 тыс. в день</li></ul>
       ${goalRows()}</section>
-    <div class="grid2">${btn(`${icon('scale', { size: 18 })} Вес`, 'weight-open')}${btn(`${icon('plus', { size: 18 })} Замер`, 'go', { v: 'measure' })}${btn(`${icon('heart', { size: 18 })} Шаги из Здоровья`, 'health-paste')}${btn(`${icon('walk', { size: 18 })} Активность`, 'go', { v: 'homeLog' })}</div>
+    <div class="grid2">${btn(`${icon('scale', { size: 18 })} Вес`, 'weight-open')}${btn(`${icon('plus', { size: 18 })} Замер`, 'go', { v: 'measure' })}${btn(`${icon('heart', { size: 18 })} Шаги из Здоровья`, 'health-paste')}${btn(`${icon('walk', { size: 18 })} Активность`, 'go', { v: 'homeLog' })}${btn(`${icon('video', { size: 18 })} Мои видео`, 'go', { v: 'videos' })}</div>
     <section class="card"><h2>Вес, кг</h2>${weightChart}<div class="legend-inline"><span><i style="background:var(--sage)"></i>факт</span><span><i style="background:var(--coral)"></i>план к цели</span></div></section>
     <section class="card"><h2>Талия, см</h2>${waistChart}</section>
     <section class="card"><h2>Визиты в клуб по неделям</h2>${barChart(weeks.map((x) => ({ label: x.label, value: x.club, current: x.current })), { goal: 3 })}</section>
@@ -344,6 +346,7 @@ export function renderSettings() {
       <div class="chips">${chip('Голос включён', 'voice', 'on', s.voice)}${chip('Без голоса', 'voice', 'off', !s.voice)}</div>
       ${btn('Проверить звук и голос', 'test-sound')}
       <p class="note">На iPhone выключи беззвучный режим (переключатель сбоку) — иначе сигналов таймера может не быть.${hasRuVoice() ? '' : ' Русский голос не найден: скачай в Настройки iPhone → Универсальный доступ → Устный контент → Голоса.'}</p></section>
+    <section class="card"><h2>Мои видео</h2><p>Ссылки на видео-тренировки и йогу из Telegram и YouTube, с проверкой на опасные упражнения. ${S.videos.length ? `Сейчас: ${S.videos.length}.` : ''}</p>${btn('Открыть библиотеку', 'go', { v: 'videos' })}</section>
     <section class="card"><h2>Шаги из Apple Здоровья</h2>
       <p>Веб-приложение не может читать Здоровье напрямую, поэтому шаги передаёт «Команда» iPhone через буфер обмена.</p>
       <details class="classes"><summary>Как сделать Команду (5 минут, один раз)</summary><ol class="list">
@@ -402,4 +405,129 @@ export function renderCancelSheet(date) {
   return `<div class="sheet-head"><h2>Отменить ${esc(cy.fmtDate(date))}</h2><button class="icon-btn" data-a="day" data-v="${date}" aria-label="Назад">${icon('x')}</button></div>
     <p>Почему?</p><div class="chips">${P.CANCEL_REASONS.map(([id, l]) => chip(l, 'cancel-reason', `${date}|${id}`, false)).join('')}</div>
     <p class="note">Отменённый день не считается пропуском. Если болеешь несколько дней — отмени каждый.</p>`;
+}
+
+// ---------- библиотека видео ----------
+const RISKS = [
+  [/прыж|джампинг|jump|скакалк|бег на месте/i, 0, 'noJumps'],
+  [/скалолаз|mountain/i, 1, 'noPlank'],
+  [/планк|plank/i, 2, 'noPlank'],
+  [/мостик|ягодичный мост|подъ[её]м таза|bridge|thrust/i, 3, 'noBridge'],
+  [/б[её]рпи|burpee/i, 4, 'noJumps'],
+  [/собак|наклон|downward|плуг|б[её]р[её]зк/i, 6, 'noHeadDown'],
+  [/отжиман|push.?up/i, 7, null],
+];
+export function risksOf(text) {
+  return RISKS.filter(([re]) => re.test(text)).map(([, i, flag]) => ({ swap: SWAPS[i], flag }));
+}
+export function videoRisks(v) {
+  return (v.exercises || []).map((e) => ({ ex: e, risks: risksOf(e.name) })).filter((x) => x.risks.length);
+}
+export function videoStatus(v) {
+  const risky = videoRisks(v).length || risksOf(v.title).length;
+  if (risky) return { level: 'no', text: `опасных упражнений: ${risky}` };
+  const c = v.checks || {};
+  if (c.noJumps && c.noHeadDown && c.noPlank && c.noBridge) return { level: 'ok', text: 'проверено' };
+  return { level: 'care', text: 'проверь перед занятием' };
+}
+export function tgLink(url) {
+  const m = String(url || '').match(/t\.me\/(?:s\/)?([A-Za-z0-9_]+)\/(\d+)/);
+  return m ? `tg://resolve?domain=${m[1]}&post=${m[2]}` : null;
+}
+const KIND_NAMES = { circuit: 'Видео-тренировка', yoga: 'Йога', other: 'Другое' };
+const statusBadge = (st) => `<span class="badge ${st.level === 'ok' ? 'badge-ok' : st.level === 'care' ? 'badge-care' : 'badge-no'}">${esc(st.text)}</span>`;
+
+export function videoLinks(v) {
+  const tg = tgLink(v.url);
+  const links = [];
+  if (tg) links.push(`<a class="btn btn-primary btn-small" href="${esc(tg)}">${icon('play', { size: 16 })} В Telegram</a>`);
+  if (v.url) links.push(`<a class="btn btn-secondary btn-small" href="${esc(v.url)}" target="_blank" rel="noopener">${tg ? 'В браузере' : `${icon('play', { size: 16 })} Открыть`}</a>`);
+  return links.length ? `<div class="link-row">${links.join('')}</div>` : '';
+}
+
+export function renderVideos() {
+  const list = [...S.videos].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title, 'ru', { numeric: true }));
+  return `<header class="page-title"><button class="icon-btn" data-a="go" data-v="back" aria-label="Назад">${icon('back')}</button><h1>Мои видео</h1></header>
+    <div class="grid2">${btn(`${icon('plus', { size: 18 })} Добавить`, 'video-new', { cls: 'btn-primary' })}${btn('Импорт таблицы', 'go', { v: 'videoImport' })}</div>
+    <details class="classes card"><summary>Чем заменить опасные упражнения</summary><table class="tbl">${SWAPS.map(([a, why, b]) => `<tr><td><b>${esc(a)}</b><br><span class="sub">${esc(why)}</span></td><td>${esc(b)}</td></tr>`).join('')}</table></details>
+    ${list.length ? list.map((v) => `<button class="row-btn" data-a="video-open" data-v="${v.id}"><b>${esc(v.title)}</b><span>${esc(KIND_NAMES[v.kind] || '')} · ${v.minutes} мин${v.exercises && v.exercises.length ? ` · ${v.exercises.length} упр.` : ''}</span>${statusBadge(videoStatus(v))}</button>`).join('')
+    : '<p class="note">Пока пусто. Добавь ссылку на видео из Telegram или YouTube — по одной или таблицей.</p>'}`;
+}
+
+export function renderVideoSheet(id) {
+  const v = S.videos.find((x) => x.id === id);
+  if (!v) return '';
+  const risky = videoRisks(v);
+  return `<div class="sheet-head"><h2>${esc(v.title)}</h2><button class="icon-btn" data-a="close" aria-label="Закрыть">${icon('x')}</button></div>
+    <p class="sub">${esc(KIND_NAMES[v.kind] || '')} · ${v.minutes} мин · ${statusBadge(videoStatus(v))}</p>
+    ${videoLinks(v)}
+    ${v.exercises && v.exercises.length ? `<h3>Упражнения</h3><div class="day-list">${v.exercises.map((e) => {
+      const r = risky.find((x) => x.ex === e);
+      return `<div class="day-item"><div class="di-icon">${icon(r ? 'ban' : 'check')}</div><div class="di-body"><div class="di-title">${esc(e.name)}${e.dose ? ` · ${esc(e.dose)}` : ''}</div>
+        ${e.tech ? `<div class="di-meta">${esc(e.tech)}</div>` : ''}
+        ${r ? `<p class="eye-note">Тебе нельзя: ${esc(r.risks[0].swap[1])}. Замена: ${esc(r.risks[0].swap[2])}.</p>` : ''}</div></div>`;
+    }).join('')}</div>` : ''}
+    ${v.skipNotes ? `<h3>Мои заметки</h3><p>${esc(v.skipNotes)}</p>` : ''}
+    <div class="row2">${btn('Изменить', 'video-edit', { v: v.id })}${btn('Удалить', 'video-del', { v: v.id, cls: 'btn-link danger-link' })}</div>`;
+}
+
+export function renderVideoForm() {
+  const f = S.form;
+  const checks = f.checks || {};
+  const ck = (key, label) => `<label class="check"><input type="checkbox" data-f="v-check" data-k="${key}" ${checks[key] ? 'checked' : ''}> ${label}</label>`;
+  const preview = risksOf(`${f.exText || ''} ${f.title || ''}`);
+  return `<header class="page-title"><button class="icon-btn" data-a="go" data-v="videos" aria-label="Назад">${icon('back')}</button><h1>${f.id ? 'Видео' : 'Новое видео'}</h1></header>
+    <section class="card">
+      <label class="field">Ссылка (Telegram, YouTube)<input type="url" data-f="v-url" value="${esc(f.url || '')}" placeholder="https://t.me/…/1675"></label>
+      <label class="field">Название<input type="text" data-f="v-title" value="${esc(f.title || '')}" placeholder="Модельная фигура · День 1"></label>
+      <fieldset><legend>Тип</legend><div class="chips">${Object.entries(KIND_NAMES).map(([k, l]) => chip(l, 'v-kind', k, (f.vkind || 'circuit') === k)).join('')}</div></fieldset>
+      <div class="stepper-block"><div class="stepper-label">Минуты</div><div class="stepper"><button data-a="v-min" data-v="-5" aria-label="Меньше">−</button><div class="val">${f.minutes || 30}</div><button data-a="v-min" data-v="5" aria-label="Больше">+</button></div></div>
+      <label class="field">Упражнения — по одному в строке<textarea data-f="v-ex" rows="5" placeholder="Скалолаз — 3×1 мин">${esc(f.exText || '')}</textarea></label>
+      ${preview.length ? `<p class="eye-note">Нашла опасное: ${preview.map((r) => esc(r.swap[0].split(',')[0])).join(', ')}. Замены — в карточке видео.</p>` : ''}
+      <fieldset><legend>Посмотрела видео — в нём нет:</legend>${ck('noJumps', 'прыжков и бега')}${ck('noHeadDown', 'положений головой вниз и глубоких наклонов')}${ck('noPlank', 'планки и упражнений, где тянет задержать дыхание')}${ck('noBridge', 'ягодичного моста')}</fieldset>
+      <label class="field">Заметки: что пропускать или заменять<textarea data-f="v-notes" rows="3" placeholder="с 12:30 «собака» — пропустить">${esc(f.skipNotes || '')}</textarea></label>
+      ${btn('Сохранить', 'video-save', { cls: 'btn-primary btn-xl' })}</section>`;
+}
+
+export function renderVideoImport() {
+  const f = S.form;
+  return `<header class="page-title"><button class="icon-btn" data-a="go" data-v="videos" aria-label="Назад">${icon('back')}</button><h1>Импорт таблицы</h1></header>
+    <section class="card"><h2>1. Задание для Genspark</h2><p class="sub">Скопируй и отдай Genspark или другому ассистенту. Если не справится — таблицу можно набрать вручную в том же формате.</p>
+      <pre class="prompt">${esc(TABLE_PROMPT)}</pre>${btn('Скопировать задание', 'copy-prompt')}</section>
+    <section class="card"><h2>2. Вставь результат</h2>
+      <label class="field">Название программы<input type="text" data-f="imp-source" value="${esc(f.source ?? 'Модельная фигура')}"></label>
+      <label class="field">Таблица: День;Упражнение;Подходы;Техника;Ссылка<textarea data-f="imp-text" rows="8" placeholder="День 1;Скалолаз;3×1 мин;корпус прямой;https://t.me/babbiebuttt/1675">${esc(f.text || '')}</textarea></label>
+      <p class="note">Подходят точка с запятой и табуляция — можно копировать прямо из Google Таблиц. Строки одного дня станут одним видео.</p>
+      ${btn('Импортировать', 'video-import', { cls: 'btn-primary btn-xl' })}</section>`;
+}
+
+export function renderVideoPick(date, kind) {
+  const list = S.videos.filter((v) => v.kind === kind);
+  return `<div class="sheet-head"><h2>${kind === 'yoga' ? 'Какая йога?' : 'Какое видео?'}</h2><button class="icon-btn" data-a="close" aria-label="Закрыть">${icon('x')}</button></div>
+    <div class="day-list">${list.map((v) => `<div class="day-item"><div class="di-icon">${icon(kind === 'yoga' ? 'yoga' : 'video')}</div><div class="di-body"><div class="di-title">${esc(v.title)}</div><div class="di-meta">${v.minutes} мин ${statusBadge(videoStatus(v))}</div>${videoLinks(v)}</div>
+        <button class="btn btn-small btn-secondary" data-a="video-open" data-v="${v.id}">Подробнее</button>${tick('video-done', `${date}|${v.id}`, false, { label: 'Сделала' })}</div>`).join('')}</div>
+    ${btn('Отметить без видео из списка', 'h-toggle', { v: `${date}|${kind}` })}${btn('Мои видео', 'go', { v: 'videos', cls: 'btn-link' })}`;
+}
+
+// Разбор таблицы «День;Упражнение;Подходы;Техника;Ссылка» в видео по дням
+export function parseVideoTable(text, source) {
+  const groups = new Map();
+  for (const raw of String(text).split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const cols = line.split(line.includes('\t') ? '\t' : ';').map((c) => c.trim());
+    if (cols.length < 2 || (/^д[её]нь$/i.test(cols[0]) && /упражнени/i.test(cols[1]))) continue;
+    const [day, name, dose = '', tech = '', url = ''] = cols;
+    const key = day || 'Без дня';
+    if (!groups.has(key)) groups.set(key, { day: key, url: '', exercises: [] });
+    const g = groups.get(key);
+    if (url && !g.url) g.url = url;
+    g.exercises.push({ name, dose, tech });
+  }
+  return [...groups.values()].map((g, i) => ({
+    title: `${source ? `${source} · ` : ''}${g.day}`,
+    url: g.url,
+    exercises: g.exercises,
+    order: parseInt((g.day.match(/\d+/) || [String(i + 1)])[0], 10),
+  }));
 }

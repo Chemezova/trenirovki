@@ -1,5 +1,5 @@
 // Офлайн: всё приложение лежит в кэше. При изменении файлов поднять VERSION.
-const VERSION = 'v3';
+const VERSION = 'v4';
 const CACHE = `trenirovki-${VERSION}`;
 const FILES = [
   './',
@@ -24,7 +24,8 @@ const FILES = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
+  // cache: 'reload' — мимо HTTP-кэша браузера, чтобы не смешать старые и новые модули
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES.map((f) => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -49,7 +50,7 @@ self.addEventListener('fetch', (e) => {
   // из кэша сразу, свежую версию — в фоне на следующий запуск
   e.respondWith(caches.open(CACHE).then(async (cache) => {
     const cached = await cache.match(req, { ignoreSearch: true });
-    const fresh = fetch(req).then((res) => { if (res.ok) cache.put(req, res.clone()); return res; }).catch(() => cached);
+    const fresh = fetch(req, { cache: 'no-cache' }).then((res) => { if (res.ok) cache.put(req, res.clone()); return res; }).catch(() => cached);
     return cached || fresh;
   }));
 });

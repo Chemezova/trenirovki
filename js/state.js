@@ -13,6 +13,7 @@ export const S = {
   symptoms: [],
   plan: { days: {} },   // переопределения плана по датам
   health: {},           // date → { steps, km, source }
+  videos: [],           // библиотека видео-тренировок со ссылками
   run: null,            // тренировка в процессе
   overlay: null,
   ui: {},
