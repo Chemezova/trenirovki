@@ -1106,6 +1106,7 @@ $app.addEventListener('change', async (e) => {
   else if (f === 'startDate' && v) { S.settings.startDate = v; await saveSettings(); render(); }
   else if (f === 'commuteKm' || f === 'goalLossKg') { const n = num(v); if (n != null) { S.settings[f] = n; await saveSettings(); } }
   else if (f === 'import' && e.target.files[0]) doImport(e.target.files[0]);
+  else if (f === 'imp-file' && e.target.files[0]) { S.form.text = await e.target.files[0].text(); render(); }
   else if (f === 'ex-photo' && e.target.files[0]) {
     const id = e.target.dataset.k;
     const blob = await shrinkImage(e.target.files[0]);

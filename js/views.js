@@ -560,9 +560,13 @@ export function renderExerciseCard(id) {
 }
 
 // ---------- библиотека видео ----------
+const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 const RISKS = [
-  [/прыж|джампинг|jump|скакалк|бег на месте/i, 0, 'noJumps'],
-  [/скалолаз|mountain/i, 1, 'noPlank'],
+  [/прыж|прыг|джампинг|jump|скакалк|бег на месте/i, 0, 'noJumps'],
+  [/скалолаз|альпинист|mountain/i, 1, 'noPlank'],
+  [/вакуум/i, 8, null],
+  [/гиперэкстенз|доброе утро|good morning/i, 6, 'noHeadDown'],
+  [/книжк|уголок|двойные скручиван|обратные скручиван|ножницы/i, 9, null],
   [/планк|plank/i, 2, 'noPlank'],
   [/мостик|ягодичный мост|подъ[её]м таза|bridge|thrust/i, 3, 'noBridge'],
   [/б[её]рпи|burpee/i, 4, 'noJumps'],
@@ -573,7 +577,7 @@ export function risksOf(text) {
   return RISKS.filter(([re]) => re.test(text)).map(([, i, flag]) => ({ swap: SWAPS[i], flag }));
 }
 export function videoRisks(v) {
-  return (v.exercises || []).map((e) => ({ ex: e, risks: risksOf(e.name) })).filter((x) => x.risks.length);
+  return (v.exercises || []).map((e) => ({ ex: e, risks: risksOf(e.name) })).filter((x) => x.risks.length || (x.ex.verdict && x.ex.verdict.startsWith('нельзя')));
 }
 export function videoStatus(v) {
   const risky = videoRisks(v).length || risksOf(v.title).length;
@@ -635,9 +639,9 @@ export function renderVideoSheet(id) {
     ${videoLinks(v)}
     ${v.exercises && v.exercises.length ? `<h3>Упражнения</h3><div class="day-list">${v.exercises.map((e) => {
       const r = risky.find((x) => x.ex === e);
-      return `<div class="day-item"><div class="di-icon">${icon(r ? 'ban' : 'check')}</div><div class="di-body"><div class="di-title">${e.type ? `<span class="sub">${esc(e.type)}:</span> ` : ''}${esc(e.name)}${e.dose ? ` · ${esc(e.dose)}` : ''}</div>
+      return `<div class="day-item"><div class="di-icon">${icon(r ? 'ban' : e.verdict ? 'clock' : 'check')}</div><div class="di-body"><div class="di-title">${e.type ? `<span class="sub">${esc(e.type)}:</span> ` : ''}${esc(e.name)}${e.dose ? ` · ${esc(e.dose)}` : ''}</div>
         ${e.tech ? `<div class="di-meta">${esc(e.tech)}</div>` : ''}
-        ${r ? `<p class="eye-note">Тебе нельзя: ${esc(r.risks[0].swap[1])}. Замена: ${esc(r.risks[0].swap[2])}.</p>` : ''}</div></div>`;
+        ${e.verdict ? `<p class="eye-note">${esc(cap(e.verdict))}</p>` : r && r.risks.length ? `<p class="eye-note">Тебе нельзя: ${esc(r.risks[0].swap[1])}. Замена: ${esc(r.risks[0].swap[2])}.</p>` : ''}</div></div>`;
     }).join('')}</div>` : ''}
     ${v.skipNotes ? `<h3>Мои заметки</h3><p>${esc(v.skipNotes)}</p>` : ''}
     <div class="row2">${btn('Изменить', 'video-edit', { v: v.id })}${btn('Удалить', 'video-del', { v: v.id, cls: 'btn-link danger-link' })}</div>`;
@@ -671,7 +675,8 @@ export function renderVideoImport() {
     <section class="card"><h2>2. Вставь результат</h2>
       <label class="field">Название программы<input type="text" data-f="imp-source" value="${esc(f.source ?? 'Модельная фигура')}"></label>
       <label class="field">Таблица: День;Упражнение;Подходы;Техника;Ссылка на пост;Программа;Тип;Видео-ссылка<textarea data-f="imp-text" rows="8" placeholder="День 1;Скалолаз;3×1 мин;корпус прямой;https://t.me/babbiebuttt/1675">${esc(f.text || '')}</textarea></label>
-      <p class="note">Подходят точка с запятой и табуляция — можно копировать прямо из Google Таблиц. Строки одного дня станут одним видео.</p>
+      <label class="btn btn-secondary file-btn">${icon('folder', { size: 18 })} Выбрать файл .csv<input type="file" accept=".csv,.txt,text/csv,text/plain" data-f="imp-file" hidden></label>
+      <p class="note">Подходят точка с запятой и табуляция — можно копировать прямо из Google Таблиц или выбрать файл, например trainings.csv с Яндекс Диска. Строки одного дня станут одним видео.</p>
       ${btn('Импортировать', 'video-import', { cls: 'btn-primary btn-xl' })}</section>`;
 }
 
@@ -691,14 +696,14 @@ export function parseVideoTable(text, source) {
     if (!line) continue;
     const cols = line.split(line.includes('\t') ? '\t' : ';').map((c) => c.trim());
     if (cols.length < 2 || (/^д[её]нь$/i.test(cols[0]) && /упражнени/i.test(cols[1]))) continue;
-    const [day, name, dose = '', tech = '', url = '', program = '', type = '', ext = ''] = cols;
+    const [day, name, dose = '', tech = '', url = '', program = '', type = '', ext = '', verdict = ''] = cols;
     const prog = program || source;
     const key = `${prog}|${day || 'Без дня'}`;
     if (!groups.has(key)) groups.set(key, { day: day || 'Без дня', prog, url: '', exercises: [] });
     const g = groups.get(key);
     if (url && !g.url) g.url = url;
     if (ext && !g.extUrl) g.extUrl = ext;
-    g.exercises.push({ name, dose, tech, type: type && type !== 'основная' ? type : undefined });
+    g.exercises.push({ name, dose, tech, type: type && type !== 'основная' ? type : undefined, verdict: /^(нельзя|осторожно)/.test(verdict) ? verdict : undefined });
   }
   return [...groups.values()].map((g, i) => ({
     title: `${g.prog ? `${g.prog} · ` : ''}${g.day}`,
