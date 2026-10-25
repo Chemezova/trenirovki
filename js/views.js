@@ -392,7 +392,7 @@ export function renderSettings() {
       ${btn('Сохранить копию', 'export', { cls: 'btn-primary' })}
       <label class="btn btn-secondary file-btn">Загрузить из копии<input type="file" accept="application/json,.json" data-f="import" hidden></label></section>
     ${btn('Стереть все данные', 'reset', { cls: 'btn-link danger-link' })}
-    <p class="note center">Версия 0.2 · ${S.sessions.length} тренировок · ${S.activities.length} активностей · ${S.measurements.length} замеров</p>`;
+    <p class="note center">Версия ${self.APP_VERSION || '?'} от ${self.APP_DATE || '?'} · ${S.sessions.length} тренировок · ${S.activities.length} активностей · ${S.measurements.length} замеров</p>`;
 }
 
 // ---------- карточка дня ----------
