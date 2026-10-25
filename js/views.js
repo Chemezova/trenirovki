@@ -5,7 +5,7 @@ import * as P from './plan.js';
 import * as ST from './stats.js';
 import { esc, dec, btn, chip, icon, stars, heroArt, quoteOf, barChart, lineChart } from './ui.js';
 import { HOME_KINDS, SWAPS, TABLE_PROMPT, EX_BY_ID, STRETCHES, poolPlan } from './data.js';
-import { FOLDERS, PROGRAMS, programName } from './programs.js';
+import { FOLDERS, PROGRAMS, programName, programExercises, upcomingSwaps } from './programs.js';
 import { hasRuVoice } from './sound.js';
 
 const MONTHS_GEN = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
@@ -472,7 +472,7 @@ export function renderPrograms() {
   const folder = (f) => `<section class="card"><h2>${icon(f.icon, { size: 20 })} ${esc(f.name)}</h2><p class="sub">${esc(f.desc)}</p>
     <div class="day-list">${f.programs.map((id) => {
       const p = PROGRAMS[id];
-      const n = p.exercises.map((x) => EX_BY_ID[x]).filter((e) => e && cy.PHASE_ORDER.indexOf(phase) >= cy.PHASE_ORDER.indexOf(e.fromPhase)).length;
+      const n = programExercises(id, phase).length;
       return `<button class="plan-day" data-a="prog-open" data-v="${id}"><div class="di-icon">${icon(p.kind === 'cardio' ? 'swim' : 'dumbbell')}</div>
         <div class="pd-body"><div class="di-title">${esc(p.name)}</div><div class="di-meta">${p.kind === 'cardio' ? esc(p.duration) : `${n} упражнений · ${esc(p.duration)}`}</div></div>${icon('chevR', { size: 18 })}</button>`;
     }).join('')}</div></section>`;
@@ -501,8 +501,11 @@ export function renderProgram(id) {
   const isToday = today.type === 'gym' && !today.cancelled && todaySlot === id;
   const doneToday = ST.sessionsOn(t).length > 0;
   const ph = cy.PHASES[cp.phase];
-  const exs = p.exercises.map((x) => EX_BY_ID[x]).filter((e) => e && cy.PHASE_ORDER.indexOf(cp.phase) >= cy.PHASE_ORDER.indexOf(e.fromPhase));
-  const later = p.exercises.map((x) => EX_BY_ID[x]).filter((e) => e && !exs.includes(e));
+  const exs = programExercises(id, cp.phase);
+  const swaps = upcomingSwaps(id, cp.phase);
+  const swappedFrom = new Set(swaps.map((s) => s.from.id));
+  const later = programExercises(id, 'p2').filter((e) => !exs.includes(e) && !swappedFrom.has(e.id));
+  const p3Date = cy.addDays(S.settings.startDate, 56);
   const pool = poolPlan(cp.phase, id === 'cardio' ? 'cardio' : 'A');
   const step = (n, title, body) => `<div class="day-item"><div class="di-icon step-num">${n}</div><div class="di-body"><div class="di-title">${title}</div>${body ? `<div class="di-meta">${body}</div>` : ''}</div></div>`;
   let n = 1;
@@ -519,7 +522,10 @@ export function renderProgram(id) {
     <div class="day-list">${steps.join('')}
       ${exs.length ? `<div class="day-item"><div class="di-icon step-num">${n}</div><div class="di-body"><div class="di-title">Упражнения · ${exs.length}</div><div class="di-meta">Тапни упражнение — техника, тренажёр, фото</div></div></div>${exRows}` : ''}
       ${after.join('')}</div>
-    ${later.length ? `<p class="note">С 5-й недели добавятся: ${later.map((e) => esc(e.name)).join(', ')}.</p>` : ''}`;
+    ${later.length ? `<p class="note">С 5-й недели добавятся: ${later.map((e) => esc(e.name)).join(', ')}.</p>` : ''}
+    ${swaps.length ? `<section class="card"><h2>С ${esc(cy.fmtDate(p3Date))} (неделя 9) — усложнение</h2><p class="sub">В фазе «Закрепление» три упражнения меняются на варианты посложнее. Стартовый вес приложение посчитает от твоего веса в исходном упражнении.</p>
+      <div class="day-list">${swaps.map((s) => `<button class="day-item ex-row" data-a="ex-open" data-v="${s.to.id}"><div class="di-icon">${icon('swap')}</div>
+        <div class="di-body"><div class="di-title">${esc(s.to.name)}</div><div class="di-meta">вместо «${esc(s.from.name)}» · ${esc(s.to.why || '')}</div></div>${icon('chevR', { size: 18 })}</button>`).join('')}</div></section>` : ''}`;
 }
 
 export function renderExerciseCard(id) {
@@ -531,6 +537,7 @@ export function renderExerciseCard(id) {
     ${photo ? `<img class="ex-photo" src="${photo}" alt="Фото тренажёра">` : ''}
     <p class="sub">${esc(doseFor(e))}${e.muscles ? ` · ${esc(e.muscles)}` : ''}</p>
     ${e.eyeNote ? `<p class="eye-note">${esc(e.eyeNote)}</p>` : ''}
+    ${e.why ? `<p><b>Зачем:</b> ${esc(e.why)}${e.progressFrom ? ` Усложнённый вариант упражнения «${esc(EX_BY_ID[e.progressFrom].name)}».` : ''}</p>` : ''}
     ${e.machine ? `<h3>Как выглядит</h3><p>${esc(e.machine)}</p>` : ''}
     <h3>Исходное положение</h3><p>${esc(e.setup)}</p>
     <h3>Движение</h3><p>${esc(e.movement)}</p>

@@ -12,7 +12,7 @@ import {
 } from './data.js';
 
 const $app = document.getElementById('app');
-import { PROGRAMS, programName, isStrength } from './programs.js';
+import { PROGRAMS, programName, isStrength, programExercises } from './programs.js';
 
 // ---------- утилиты ----------
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -81,8 +81,7 @@ async function removeActivity(rec) {
 
 // ---------- логика тренировки ----------
 const phaseIdx = (p) => cy.PHASE_ORDER.indexOf(p);
-const exercisesFor = (slot, phase) => (PROGRAMS[slot] ? PROGRAMS[slot].exercises.map((id) => EX_BY_ID[id]) : [])
-  .filter((e) => e && phaseIdx(phase) >= phaseIdx(e.fromPhase));
+const exercisesFor = (slot, phase) => programExercises(slot, phase);
 const rangeFor = (ex, phase) => ex.reps || cy.PHASES[phase].reps;
 const perSide = (ex) => !!((ex.reps && ex.reps.perSide) || ex.perSide);
 const exSet = (ex) => S.exSettings[ex.id] || {};
@@ -118,18 +117,40 @@ function historyFor(exId) {
     .sort((a, b) => b.at.localeCompare(a.at));
 }
 
+// Вариация упражнения стартует от веса в исходном: «Присед в медленном темпе» — от обычного приседа
+function startWeightFor(ex, history) {
+  if (history.length || !ex.progressFrom || ex.startFactor == null) return null;
+  const parent = EX_BY_ID[ex.progressFrom];
+  const last = historyFor(ex.progressFrom)[0];
+  if (!last) return null;
+  const ws = last.sets.map((x) => x.weight).filter((w) => w != null);
+  if (!ws.length) return null;
+  const step = stepFor(ex);
+  const w = Math.max(...ws) * ex.startFactor;
+  return { weight: Math.max(step, roundToStep(w, step)), from: parent.name, fromWeight: Math.max(...ws) };
+}
+
 function suggestionFor(ex) {
   const r = S.run;
-  return suggest({
-    history: historyFor(ex.id),
+  const history = historyFor(ex.id);
+  const start = startWeightFor(ex, history);
+  const sug = suggest({
+    history,
     range: rangeFor(ex, r.phase),
     step: stepFor(ex),
     mode: modeFor(ex),
     today: r.date,
     topSessions: ex.topSessions || 1,
+    startWeight: start ? start.weight : null,
     forceBodyweight: !!ex.bodyweightWeek1 && r.week <= 1,
     offerDumbbells: !!ex.offerDumbbells && loadTypeFor(ex) !== 'dumbbell',
   });
+  if (sug.kind === 'calibration' && ex.progressFrom) {
+    sug.reason = start
+      ? `Новый вариант. Старт от твоих ${dec(start.fromWeight)} в «${start.from}»${ex.startFactor < 1 ? ' — на одну сторону примерно половина' : ''}. Если идёт тяжело — шаг вниз.`
+      : `Новый вариант «${EX_BY_ID[ex.progressFrom].name}». Подбери вес, с которым все повторы идут свободно.`;
+  }
+  return sug;
 }
 
 function ensureInputs() {

@@ -8,6 +8,7 @@
 <script type="module">
 import * as cy from './js/cycle.js';
 import { suggest } from './js/progression.js';
+import { programExercises, upcomingSwaps } from './js/programs.js';
 
 const out = document.getElementById('out');
 let pass = 0, fail = 0;
@@ -71,6 +72,18 @@ const RS = { min: 10, max: 12 };
 eq('зашагивание: калибровка', suggest({ ...base, range: RS, mode: 'repsOnly', history: [] }).kind, 'calibration');
 eq('зашагивание: +1 повтор', suggest({ ...base, range: RS, mode: 'repsOnly', history: [h('2026-10-30', [s(null, 10), s(null, 11)])] }).targetReps, 11);
 eq('зашагивание: 2 сессии на верхе → гантели', suggest({ ...base, range: RS, mode: 'repsOnly', offerDumbbells: true, history: [h('2026-10-30', [s(null, 12), s(null, 12)]), h('2026-10-26', [s(null, 12), s(null, 12)])] }).offerDumbbells, true);
+
+// программы по фазам
+const ids = (p, ph) => programExercises(p, ph).map((e) => e.id);
+eq('А, неделя 1: 6 упражнений с обычным приседом', [ids('A', 'p1').length, ids('A', 'p1')[0]], [6, 'goblet-box-squat']);
+eq('А, неделя 5: + тяга гантели', ids('A', 'p2').includes('supported-row'), true);
+eq('А, неделя 9: присед в медленном темпе вместо обычного', [ids('A', 'p3').includes('tempo-box-squat'), ids('A', 'p3').includes('goblet-box-squat')], [true, false]);
+eq('А, неделя 9: тяга одной рукой и разгибание одной ногой', [ids('A', 'p3').includes('single-arm-pulldown'), ids('A', 'p3').includes('single-leg-extension')], [true, true]);
+eq('Б, неделя 9: три замены', ['cable-lateral-raise', 'paused-cable-kickback', 'single-arm-cable-row'].every((x) => ids('B', 'p3').includes(x)), true);
+eq('Б, разгрузка: те же варианты, что в неделе 12', ids('B', 'deload'), ids('B', 'p3'));
+eq('Число упражнений не меняется при замене', [ids('A', 'p2').length, ids('A', 'p3').length, ids('B', 'p2').length, ids('B', 'p3').length], [7, 7, 7, 7]);
+eq('День ног в фазе 3 без замен', ids('legs', 'p3')[0], 'goblet-box-squat');
+eq('Анонс замен в фазе 2 и пусто в фазе 3', [upcomingSwaps('A', 'p2').length, upcomingSwaps('A', 'p3').length], [3, 0]);
 
 out.innerHTML = `<b>${fail ? `<span class="fail">Провалено: ${fail}</span>` : '<span class="ok">Все тесты прошли</span>'} · пройдено ${pass}</b>\n\n` + out.innerHTML;
 document.title = fail ? `FAIL ${fail}` : `OK ${pass}`;
