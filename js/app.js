@@ -725,7 +725,7 @@ const A = {
   'video-new': () => { S.form = { kind: 'video', vkind: 'circuit', minutes: 30, checks: {} }; S.screen = 'videoForm'; S.overlay = null; render(); },
   'video-edit': (id) => {
     const v = S.videos.find((x) => x.id === id);
-    S.form = { kind: 'video', id, url: v.url, title: v.title, vkind: v.kind, minutes: v.minutes, checks: { ...(v.checks || {}) }, skipNotes: v.skipNotes || '', exText: (v.exercises || []).map((e) => [e.name, e.dose, e.tech].filter(Boolean).join(' — ')).join('\n') };
+    S.form = { kind: 'video', id, url: v.url, extUrl: v.extUrl || '', title: v.title, vkind: v.kind, minutes: v.minutes, checks: { ...(v.checks || {}) }, skipNotes: v.skipNotes || '', exText: (v.exercises || []).map((e) => [e.name, e.dose, e.tech].filter(Boolean).join(' — ')).join('\n') };
     S.screen = 'videoForm'; S.overlay = null; render();
   },
   'v-kind': (v) => { S.form.vkind = v; render(); },
@@ -735,7 +735,7 @@ const A = {
     const exercises = String(f.exText || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => { const [name, dose = '', ...tech] = l.split(/\s+—\s+|\s+-\s+/); return { name, dose, tech: tech.join(' — ') }; });
     const tgPost = String(f.url || '').match(/\/(\d+)\s*$/);
     const rec = {
-      id: f.id || uid(), url: (f.url || '').trim(), title: (f.title || '').trim() || (tgPost ? `Видео ${tgPost[1]}` : 'Видео'),
+      id: f.id || uid(), url: (f.url || '').trim(), extUrl: (f.extUrl || '').trim(), title: (f.title || '').trim() || (tgPost ? `Видео ${tgPost[1]}` : 'Видео'),
       kind: f.vkind || 'circuit', minutes: f.minutes || 30, checks: f.checks || {}, skipNotes: f.skipNotes || '', exercises,
       order: (S.videos.find((x) => x.id === f.id) || {}).order, addedAt: (S.videos.find((x) => x.id === f.id) || {}).addedAt || nowISO(),
     };
@@ -1101,7 +1101,8 @@ $app.addEventListener('change', async (e) => {
   else if (f === 'wt-pm') S.overlay.pm = e.target.checked;
   else if (f === 'v-check') { S.form.checks = { ...(S.form.checks || {}), [e.target.dataset.k]: e.target.checked }; }
   else if (f === 'v-ex') { S.form.exText = v; render(); }
-  else if (['v-url', 'v-title', 'v-notes', 'imp-text', 'imp-source'].includes(f)) S.form[{ 'v-url': 'url', 'v-title': 'title', 'v-notes': 'skipNotes', 'imp-text': 'text', 'imp-source': 'source' }[f]] = v;
+  else if (f === 'v-url' || f === 'v-ext') { S.form[f === 'v-url' ? 'url' : 'extUrl'] = v; render(); }
+  else if (['v-title', 'v-notes', 'imp-text', 'imp-source'].includes(f)) S.form[{ 'v-title': 'title', 'v-notes': 'skipNotes', 'imp-text': 'text', 'imp-source': 'source' }[f]] = v;
   else if (f === 'startDate' && v) { S.settings.startDate = v; await saveSettings(); render(); }
   else if (f === 'commuteKm' || f === 'goalLossKg') { const n = num(v); if (n != null) { S.settings[f] = n; await saveSettings(); } }
   else if (f === 'import' && e.target.files[0]) doImport(e.target.files[0]);
@@ -1120,7 +1121,7 @@ $app.addEventListener('input', (e) => {
   if (f && f.startsWith('m-')) S.form[f.slice(2)] = e.target.value;
   if (f === 'act-minutes') { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) S.overlay.minutes = n; }
   if (f === 'act-kmval') { const n = num(e.target.value); if (n != null) S.overlay.km = n; }
-  const map = { 'v-url': 'url', 'v-title': 'title', 'v-notes': 'skipNotes', 'v-ex': 'exText', 'imp-text': 'text', 'imp-source': 'source' };
+  const map = { 'v-ext': 'extUrl', 'v-url': 'url', 'v-title': 'title', 'v-notes': 'skipNotes', 'v-ex': 'exText', 'imp-text': 'text', 'imp-source': 'source' };
   if (f && map[f]) S.form[map[f]] = e.target.value;
 });
 

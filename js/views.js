@@ -486,7 +486,7 @@ export function renderPrograms() {
     ${bloggers.map((b) => `<section class="card"><h2>${icon('folder', { size: 20 })} ${esc(b.name)}</h2><p class="sub">Видео-комплексы · ${b.list.length}</p>
       <div class="day-list">${b.list.map((v) => {
         const st = videoStatus(v);
-        return `<button class="plan-day" data-a="video-open" data-v="${v.id}"><div class="di-icon">${icon(v.kind === 'yoga' ? 'yoga' : 'video')}</div><div class="pd-body"><div class="di-title">${esc(v.title.slice(b.name.length + 3) || v.title)}</div><div class="di-meta">${v.minutes} мин ${statusBadge(st)}</div></div>${icon('chevR', { size: 18 })}</button>`;
+        return `<button class="plan-day" data-a="video-open" data-v="${v.id}"><div class="di-icon">${thumbIcon(v, v.kind === 'yoga' ? 'yoga' : 'video')}</div><div class="pd-body"><div class="di-title">${esc(v.title.slice(b.name.length + 3) || v.title)}</div><div class="di-meta">${v.minutes} мин ${statusBadge(st)}</div></div>${icon('chevR', { size: 18 })}</button>`;
       }).join('')}</div></section>`).join('')}
     <section class="card"><h2>${icon('plus', { size: 20 })} Комплексы блогеров</h2><p class="sub">Загрузи видео или таблицу тренировок — для каждой программы появится своя папка, а опасные упражнения я помечу и предложу замену.</p>
       <div class="grid2">${btn('Добавить видео', 'video-new')}${btn('Импорт таблицы', 'go', { v: 'videoImport' })}</div></section>`;
@@ -582,6 +582,22 @@ export function videoStatus(v) {
   if (c.noJumps && c.noHeadDown && c.noPlank && c.noBridge) return { level: 'ok', text: 'проверено' };
   return { level: 'care', text: 'проверь перед занятием' };
 }
+// Превью YouTube: картинка грузится с YouTube, само видео открывается там же — приложение не тяжелеет
+export function ytId(url) {
+  const m = String(url || '').match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/))([\w-]{11})/);
+  return m ? m[1] : null;
+}
+function videoYt(v) { return ytId(v.extUrl) || ytId(v.url); }
+function thumbIcon(v, fallback) {
+  const id = videoYt(v);
+  return id ? `<img src="https://i.ytimg.com/vi/${id}/mqdefault.jpg" alt="" loading="lazy">` : icon(fallback);
+}
+function ytPreview(v) {
+  const id = videoYt(v);
+  if (!id) return '';
+  return `<a class="yt-preview" href="https://www.youtube.com/watch?v=${id}" target="_blank" rel="noopener" aria-label="Смотреть на YouTube"><img src="https://i.ytimg.com/vi/${id}/hqdefault.jpg" alt="" loading="lazy"><span class="play">${icon('play', { size: 30, fill: true })}</span></a>`;
+}
+
 export function tgLink(url) {
   const m = String(url || '').match(/t\.me\/(?:s\/)?([A-Za-z0-9_]+)\/(\d+)/);
   return m ? `tg://resolve?domain=${m[1]}&post=${m[2]}` : null;
@@ -591,9 +607,12 @@ const statusBadge = (st) => `<span class="badge ${st.level === 'ok' ? 'badge-ok'
 
 export function videoLinks(v) {
   const tg = tgLink(v.url);
+  const yt = videoYt(v);
   const links = [];
-  if (tg) links.push(`<a class="btn btn-primary btn-small" href="${esc(tg)}">${icon('play', { size: 16 })} В Telegram</a>`);
-  if (v.url) links.push(`<a class="btn btn-secondary btn-small" href="${esc(v.url)}" target="_blank" rel="noopener">${tg ? 'В браузере' : `${icon('play', { size: 16 })} Открыть`}</a>`);
+  if (yt) links.push(`<a class="btn btn-primary btn-small" href="https://www.youtube.com/watch?v=${yt}" target="_blank" rel="noopener">${icon('play', { size: 16 })} YouTube</a>`);
+  else if (v.extUrl) links.push(`<a class="btn btn-primary btn-small" href="${esc(v.extUrl)}" target="_blank" rel="noopener">${icon('play', { size: 16 })} Видео</a>`);
+  if (tg) links.push(`<a class="btn ${yt || v.extUrl ? 'btn-secondary' : 'btn-primary'} btn-small" href="${esc(tg)}">${yt || v.extUrl ? '' : icon('play', { size: 16 })} Пост в Telegram</a>`);
+  else if (v.url && !ytId(v.url)) links.push(`<a class="btn btn-secondary btn-small" href="${esc(v.url)}" target="_blank" rel="noopener">${icon('play', { size: 16 })} Открыть</a>`);
   return links.length ? `<div class="link-row">${links.join('')}</div>` : '';
 }
 
@@ -602,7 +621,7 @@ export function renderVideos() {
   return `<header class="page-title"><button class="icon-btn" data-a="go" data-v="back" aria-label="Назад">${icon('back')}</button><h1>Мои видео</h1></header>
     <div class="grid2">${btn(`${icon('plus', { size: 18 })} Добавить`, 'video-new', { cls: 'btn-primary' })}${btn('Импорт таблицы', 'go', { v: 'videoImport' })}</div>
     <details class="classes card"><summary>Чем заменить опасные упражнения</summary><table class="tbl">${SWAPS.map(([a, why, b]) => `<tr><td><b>${esc(a)}</b><br><span class="sub">${esc(why)}</span></td><td>${esc(b)}</td></tr>`).join('')}</table></details>
-    ${list.length ? list.map((v) => `<button class="row-btn" data-a="video-open" data-v="${v.id}"><b>${esc(v.title)}</b><span>${esc(KIND_NAMES[v.kind] || '')} · ${v.minutes} мин${v.exercises && v.exercises.length ? ` · ${v.exercises.length} упр.` : ''}</span>${statusBadge(videoStatus(v))}</button>`).join('')
+    ${list.length ? list.map((v) => `<button class="plan-day" data-a="video-open" data-v="${v.id}"><div class="di-icon">${thumbIcon(v, v.kind === 'yoga' ? 'yoga' : 'video')}</div><div class="pd-body"><div class="di-title">${esc(v.title)}</div><div class="di-meta"><span>${esc(KIND_NAMES[v.kind] || '')} · ${v.minutes} мин${v.exercises && v.exercises.length ? ` · ${v.exercises.length} упр.` : ''} ${statusBadge(videoStatus(v))}</div></div></button>`).join('')
     : '<p class="note">Пока пусто. Добавь ссылку на видео из Telegram или YouTube — по одной или таблицей.</p>'}`;
 }
 
@@ -611,6 +630,7 @@ export function renderVideoSheet(id) {
   if (!v) return '';
   const risky = videoRisks(v);
   return `<div class="sheet-head"><h2>${esc(v.title)}</h2><button class="icon-btn" data-a="close" aria-label="Закрыть">${icon('x')}</button></div>
+    ${ytPreview(v)}
     <p class="sub">${esc(KIND_NAMES[v.kind] || '')} · ${v.minutes} мин · ${statusBadge(videoStatus(v))}</p>
     ${videoLinks(v)}
     ${v.exercises && v.exercises.length ? `<h3>Упражнения</h3><div class="day-list">${v.exercises.map((e) => {
@@ -630,7 +650,9 @@ export function renderVideoForm() {
   const preview = risksOf(`${f.exText || ''} ${f.title || ''}`);
   return `<header class="page-title"><button class="icon-btn" data-a="go" data-v="videos" aria-label="Назад">${icon('back')}</button><h1>${f.id ? 'Видео' : 'Новое видео'}</h1></header>
     <section class="card">
-      <label class="field">Ссылка (Telegram, YouTube)<input type="url" data-f="v-url" value="${esc(f.url || '')}" placeholder="https://t.me/…/1675"></label>
+      <label class="field">Ссылка на пост или видео (Telegram, YouTube)<input type="url" data-f="v-url" value="${esc(f.url || '')}" placeholder="https://t.me/…/1675"></label>
+      <label class="field">Видео на YouTube, RuTube или VK — если есть<input type="url" data-f="v-ext" value="${esc(f.extUrl || '')}" placeholder="https://youtu.be/…"></label>
+      ${ytPreview({ url: f.url, extUrl: f.extUrl })}
       <label class="field">Название<input type="text" data-f="v-title" value="${esc(f.title || '')}" placeholder="Модельная фигура · День 1"></label>
       <fieldset><legend>Тип</legend><div class="chips">${Object.entries(KIND_NAMES).map(([k, l]) => chip(l, 'v-kind', k, (f.vkind || 'circuit') === k)).join('')}</div></fieldset>
       <div class="stepper-block"><div class="stepper-label">Минуты</div><div class="stepper"><button data-a="v-min" data-v="-5" aria-label="Меньше">−</button><div class="val">${f.minutes || 30}</div><button data-a="v-min" data-v="5" aria-label="Больше">+</button></div></div>
@@ -648,7 +670,7 @@ export function renderVideoImport() {
       <pre class="prompt">${esc(TABLE_PROMPT)}</pre>${btn('Скопировать задание', 'copy-prompt')}</section>
     <section class="card"><h2>2. Вставь результат</h2>
       <label class="field">Название программы<input type="text" data-f="imp-source" value="${esc(f.source ?? 'Модельная фигура')}"></label>
-      <label class="field">Таблица: День;Упражнение;Подходы;Техника;Ссылка;Программа;Тип<textarea data-f="imp-text" rows="8" placeholder="День 1;Скалолаз;3×1 мин;корпус прямой;https://t.me/babbiebuttt/1675">${esc(f.text || '')}</textarea></label>
+      <label class="field">Таблица: День;Упражнение;Подходы;Техника;Ссылка на пост;Программа;Тип;Видео-ссылка<textarea data-f="imp-text" rows="8" placeholder="День 1;Скалолаз;3×1 мин;корпус прямой;https://t.me/babbiebuttt/1675">${esc(f.text || '')}</textarea></label>
       <p class="note">Подходят точка с запятой и табуляция — можно копировать прямо из Google Таблиц. Строки одного дня станут одним видео.</p>
       ${btn('Импортировать', 'video-import', { cls: 'btn-primary btn-xl' })}</section>`;
 }
@@ -656,7 +678,7 @@ export function renderVideoImport() {
 export function renderVideoPick(date, kind) {
   const list = S.videos.filter((v) => v.kind === kind);
   return `<div class="sheet-head"><h2>${kind === 'yoga' ? 'Какая йога?' : 'Какое видео?'}</h2><button class="icon-btn" data-a="close" aria-label="Закрыть">${icon('x')}</button></div>
-    <div class="day-list">${list.map((v) => `<div class="day-item"><div class="di-icon">${icon(kind === 'yoga' ? 'yoga' : 'video')}</div><div class="di-body"><div class="di-title">${esc(v.title)}</div><div class="di-meta">${v.minutes} мин ${statusBadge(videoStatus(v))}</div>${videoLinks(v)}</div>
+    <div class="day-list">${list.map((v) => `<div class="day-item"><div class="di-icon">${thumbIcon(v, kind === 'yoga' ? 'yoga' : 'video')}</div><div class="di-body"><div class="di-title">${esc(v.title)}</div><div class="di-meta">${v.minutes} мин ${statusBadge(videoStatus(v))}</div>${videoLinks(v)}</div>
         <button class="btn btn-small btn-secondary" data-a="video-open" data-v="${v.id}">Подробнее</button>${tick('video-done', `${date}|${v.id}`, false, { label: 'Сделала' })}</div>`).join('')}</div>
     ${btn('Отметить без видео из списка', 'h-toggle', { v: `${date}|${kind}` })}${btn('Мои видео', 'go', { v: 'videos', cls: 'btn-link' })}`;
 }
@@ -669,17 +691,19 @@ export function parseVideoTable(text, source) {
     if (!line) continue;
     const cols = line.split(line.includes('\t') ? '\t' : ';').map((c) => c.trim());
     if (cols.length < 2 || (/^д[её]нь$/i.test(cols[0]) && /упражнени/i.test(cols[1]))) continue;
-    const [day, name, dose = '', tech = '', url = '', program = '', type = ''] = cols;
+    const [day, name, dose = '', tech = '', url = '', program = '', type = '', ext = ''] = cols;
     const prog = program || source;
     const key = `${prog}|${day || 'Без дня'}`;
     if (!groups.has(key)) groups.set(key, { day: day || 'Без дня', prog, url: '', exercises: [] });
     const g = groups.get(key);
     if (url && !g.url) g.url = url;
+    if (ext && !g.extUrl) g.extUrl = ext;
     g.exercises.push({ name, dose, tech, type: type && type !== 'основная' ? type : undefined });
   }
   return [...groups.values()].map((g, i) => ({
     title: `${g.prog ? `${g.prog} · ` : ''}${g.day}`,
     url: g.url,
+    extUrl: g.extUrl || '',
     exercises: g.exercises,
     order: parseInt((g.day.match(/\d+/) || [String(i + 1)])[0], 10),
   }));
