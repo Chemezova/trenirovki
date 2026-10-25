@@ -23,9 +23,9 @@ export function weekLabel(week, phase) {
   return `Неделя ${week} из 13 · ${cy.PHASES[phase].name}`;
 }
 
-export function gymTitle(slot, kind) {
+export function gymTitle(slot, kind, finisher = 'pool') {
   const base = slot === 'cardio' ? 'Кардио' : programName(slot);
-  return kind === 'full' && slot !== 'pool' ? `${base} + бассейн` : base;
+  return kind === 'full' && slot !== 'pool' ? `${base} + ${P.FINISHERS[finisher].short}` : base;
 }
 
 const homeDone = (date, kind) => ST.activitiesOn(date).find((a) => (kind === 'walk' ? a.kind === 'walk' && !a.commute : kind === 'video' ? ['circuit', 'yoga', 'video'].includes(a.kind) : a.kind === kind));
@@ -62,9 +62,8 @@ export function dayItemsHtml(date) {
     else if (sess) act = tick('gym-retro', date, true, { disabled: !sess.retro || !canEdit, label: 'Сделано' });
     else if (isToday) act = btn(`${icon('play', { size: 16 })} Начать`, 'gym-start', { v: date, cls: 'btn-small btn-primary' });
     else if (past) act = tick('gym-retro', date, false, { disabled: !canEdit, label: 'Отметить, что была в клубе' });
-    const meta = sess ? (sess.retro ? 'Отмечено задним числом' : `Сделано · ${{ done: 'полностью', partial: 'частично' }[sess.status]}`) : `${P.GYM_WINDOW.start}–${P.GYM_WINDOW.end} · ${P.GYM_KINDS[d.gymKind].hours}${timePassed && !running ? ' · время прошло' : ''}`;
-    rows.push(`<div class="day-item ${cls}"><div class="di-icon">${icon(slot === 'pool' ? 'swim' : 'dumbbell')}</div>
-      <div class="di-body"><div class="di-title">${esc(gymTitle(slot, d.gymKind))}</div><div class="di-meta">${esc(meta)}</div>
+    const meta = sess ? (sess.retro ? 'Отмечено задним числом' : `Сделано · ${{ done: 'полностью', partial: 'частично' }[sess.status]}`) : `${P.GYM_WINDOW.start}–${P.GYM_WINDOW.end} · ${P.GYM_KINDS[d.gymKind].hours}${timePassed && !running ? ' · время прошло' : ''}`;    rows.push(`<div class="day-item ${cls}"><div class="di-icon">${icon(slot === 'pool' ? 'swim' : 'dumbbell')}</div>
+      <div class="di-body"><div class="di-title">${esc(gymTitle(slot, d.gymKind, d.finisher))}</div><div class="di-meta">${esc(meta)}</div>
       ${PROGRAMS[slot] ? `<button class="btn-link mini-link" data-a="prog-open" data-v="${slot}">Смотреть программу</button>` : ''}</div>${act}</div>`);
     const commute = ST.activitiesOn(date).filter((a) => a.commute);
     if (commute.length) rows.push(`<div class="day-item is-done"><div class="di-icon">${icon('walk')}</div><div class="di-body"><div class="di-title">Пешком до клуба</div><div class="di-meta">${dec(commute.reduce((t, a) => t + (a.distanceKm || 0), 0))} км</div></div></div>`);
@@ -218,7 +217,7 @@ function planDayRow(date) {
   const d = P.effective(date, S.plan);
   const slot = P.slotFor(date, S.plan, S.settings.startDate);
   const c = d.classId ? P.classById(date, d.classId) : null;
-  const title = d.cancelled ? 'Отменено' : d.type === 'gym' ? gymTitle(slot, d.gymKind) : 'Дома: прогулка, видео или йога, Ring Fit';
+  const title = d.cancelled ? 'Отменено' : d.type === 'gym' ? gymTitle(slot, d.gymKind, d.finisher) : 'Дома: прогулка, видео или йога, Ring Fit';
   const done = dayDone(date);
   const missed = date < cy.today() && !done && !d.cancelled;
   const meta = missed ? 'не отмечено' : [d.cancelled ? '' : P.plannedHours(date, S.plan), c ? `${c.time} ${c.name}` : '', done ? '✓ сделано' : ''].filter(Boolean).join(' · ');
@@ -405,6 +404,10 @@ export function renderDaySheet(date) {
     parts.push(`<div class="seg" role="group"><button data-a="day-type" data-v="${date}|gym" aria-pressed="${d.type === 'gym'}">День клуба</button><button data-a="day-type" data-v="${date}|home" aria-pressed="${d.type === 'home'}">Дома</button></div>`);
     if (d.type === 'gym') {
       parts.push(`<div class="chips">${Object.entries(P.GYM_KINDS).map(([k, v]) => chip(v.name, 'gym-kind', `${date}|${k}`, d.gymKind === k)).join('')}</div>`);
+      if (d.gymKind === 'full') {
+        parts.push(`<fieldset><legend>Финиш после зала</legend><div class="chips">${Object.entries(P.FINISHERS).map(([k, f]) => chip(f.name, 'day-finish', `${date}|${k}`, d.finisher === k)).join('')}</div>
+          <p class="note">${esc(P.FINISHERS[d.finisher].hint)}${d.finisher === 'class' && !d.classId ? '. Выбери занятие ниже в «Групповых занятиях».' : ''}</p></fieldset>`);
+      }
       if (d.gymKind !== 'pool') {
         const cur = P.slotFor(date, S.plan, S.settings.startDate);
         parts.push(`<fieldset><legend>Программа</legend><div class="chips">${chip('По плану', 'day-prog', `${date}|`, !d.program)}${FOLDERS.flatMap((f) => f.programs).map((id) => chip(PROGRAMS[id].name, 'day-prog', `${date}|${id}`, d.program === id)).join('')}</div>
@@ -513,7 +516,12 @@ export function renderProgram(id) {
   if (p.kind === 'cardio') steps.push(step(n++, `Кардио ${ph.cardioMin} мин`, 'Зона 2: можно говорить короткими фразами. Эллипс, велотренажёр или дорожка с наклоном 5–8%.'));
   const exRows = exs.map((e) => `<button class="day-item ex-row" data-a="ex-open" data-v="${e.id}"><div class="di-icon">${S.photos[e.id] ? `<img src="${S.photos[e.id]}" alt="">` : icon('dumbbell')}</div>
     <div class="di-body"><div class="di-title">${esc(e.name)}</div><div class="di-meta">${esc(doseFor(e, ctx))}${e.muscles ? ` · ${esc(e.muscles)}` : ''}</div></div>${icon('chevR', { size: 18 })}</button>`).join('');
-  const after = [step(n + (exs.length ? 1 : 0), 'Бассейн', esc(pool.text)), step(n + (exs.length ? 2 : 1), 'Растяжка', esc(STRETCHES.map((s) => s.name).join(', ')))];
+  const finishOpts = Object.entries(P.FINISHERS).filter(([k]) => !(id === 'cardio' && k === 'cardio'))
+    .map(([k, f]) => `<li><b>${esc(f.name)}</b> — ${esc(k === 'pool' ? pool.text : f.hint)}</li>`).join('');
+  const after = [
+    step(n + (exs.length ? 1 : 0), 'Финиш — на выбор', `По умолчанию бассейн. Равноценные замены:<ul class="list finish-list">${finishOpts}</ul>`),
+    step(n + (exs.length ? 2 : 1), 'Растяжка', esc(STRETCHES.map((s) => s.name).join(', '))),
+  ];
   return `<header class="page-title"><button class="icon-btn" data-a="go" data-v="back" aria-label="Назад">${icon('back')}</button><h1>${esc(p.name)}</h1></header>
     <section class="card"><p class="sub">${esc(folder ? folder.name : '')} · ${esc(p.duration)}</p><p>${esc(p.why)}</p>
       ${p.kind === 'gym' ? `<p><b>Сейчас (${esc(weekLabel(cp.week, cp.phase).toLowerCase())}):</b> ${Math.max(2, cy.setsFor(cp.week, cp.phase) - (p.light ? 1 : 0))} подхода, отдых ${ph.rest} с, темп 2 с вверх и 2–3 с вниз, выдох на усилии.${p.light ? ' Вес на шаг ниже обычного.' : ''}</p>` : ''}

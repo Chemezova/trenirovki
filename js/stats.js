@@ -103,9 +103,10 @@ export function typeBreakdown(from, to) {
   const add = (id, minutes, km = 0) => { r[id].count += 1; r[id].minutes += Math.round(minutes || 0); r[id].km += km; };
   for (const s of S.sessions) {
     if (s.date < from || s.date > to || !(s.status === 'done' || s.status === 'partial')) continue;
-    const pool = s.pool && s.pool.result !== 'none' ? s.pool.minutes || 25 : s.retro && s.gymKind !== 'gym' ? 25 : 0;
-    const cardio = s.cardio ? s.cardio.minutes || 0 : 0;
+    const pool = s.pool && s.pool.result !== 'none' ? s.pool.minutes || 25 : s.retro && s.gymKind !== 'gym' && (s.finisher || 'pool') === 'pool' ? 25 : 0;
+    const cardio = (s.cardio ? s.cardio.minutes || 0 : 0) + (s.finisherCardio ? s.finisherCardio.minutes || 0 : 0);
     if (pool) add('pool', pool);
+    if (s.finisherCardio) add('cardio', s.finisherCardio.minutes);
     if (s.slot === 'cardio' && (cardio || s.retro)) add('cardio', cardio || 40);
     if (s.slot && s.slot !== 'cardio' && s.slot !== 'pool') add('gym', Math.max(20, sessionMinutes(s) - pool - cardio));
   }

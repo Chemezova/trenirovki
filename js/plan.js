@@ -4,8 +4,17 @@ import * as cy from './cycle.js';
 export const DEFAULT_GYM_WEEKDAYS = [1, 3, 5];
 export const GYM_WINDOW = { start: '11:30', end: '15:30' };
 
+// Финиш после силовой: бассейн по умолчанию или равноценная замена
+export const FINISHERS = {
+  pool: { name: 'Бассейн', short: 'бассейн', icon: 'swim', hint: 'по плану фазы, ~30 мин' },
+  walk: { name: 'Пешком из клуба', short: 'пешком домой', icon: 'walk', hint: 'минимум 3 км, ~40 мин в бодром темпе' },
+  class: { name: 'Групповое занятие', short: 'групповое', icon: 'group', hint: 'пилатес, стрейч, антиэйдж, Зумба Голд — одно на выбор' },
+  cardio: { name: 'Кардио на тренажёре', short: 'кардио 20 мин', icon: 'heart', hint: '20 мин в зоне 2: эллипс или велотренажёр' },
+};
+export const WALK_MIN_KM = 3;
+
 export const GYM_KINDS = {
-  full: { name: 'Зал + бассейн', hours: '3–3,5 ч', min: 195 },
+  full: { name: 'Зал + финиш', hours: '3–3,5 ч', min: 195 },
   gym: { name: 'Только зал', hours: '1,5–2 ч', min: 105 },
   pool: { name: 'Только бассейн', hours: '1,5–2 ч', min: 105 },
 };
@@ -54,7 +63,7 @@ export const classById = (date, id) => classesFor(date).find((c) => c.id === id)
 export function effective(date, plan) {
   const o = plan.days[date] || {};
   const type = o.type || (DEFAULT_GYM_WEEKDAYS.includes(cy.weekday(date)) ? 'gym' : 'home');
-  return { date, type, gymKind: o.gymKind || 'full', classId: o.classId || null, cancelled: o.cancelled || null, program: o.program || null };
+  return { date, type, gymKind: o.gymKind || 'full', classId: o.classId || null, cancelled: o.cancelled || null, program: o.program || null, finisher: o.finisher || 'pool' };
 }
 
 export const weekDates = (ws) => Array.from({ length: 7 }, (_, i) => cy.addDays(ws, i));

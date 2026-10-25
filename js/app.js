@@ -5,7 +5,7 @@ import * as P from './plan.js';
 import * as ST from './stats.js';
 import { S, DEFAULT_SETTINGS } from './state.js';
 import { suggest, roundToStep } from './progression.js';
-import { esc, dec, btn, chip, icon } from './ui.js';
+import { esc, dec, btn, chip, icon, stars } from './ui.js';
 import * as V from './views.js';
 import {
   EXERCISES, EX_BY_ID, STRETCHES, poolPlan, CARDIO_MACHINES, STOP_MAIN, STOP_SECONDARY, SYMPTOMS, HOME_KINDS, TABLE_PROMPT,
@@ -89,7 +89,8 @@ const unitFor = (ex) => exSet(ex).unit || ex.unit;
 const stepFor = (ex) => exSet(ex).weightStep || ex.weightStep;
 const loadTypeFor = (ex) => exSet(ex).loadTypeOverride || ex.loadType;
 const modeFor = (ex) => (ex.progression === 'repsOnly' && loadTypeFor(ex) === 'dumbbell' ? 'double' : ex.progression);
-const hasPool = (r) => r.gymKind !== 'gym';
+const hasFinish = (r) => r.gymKind !== 'gym';
+const afterMain = (r) => (hasFinish(r) ? 'finish' : 'stretch');
 
 function setsTarget(r = S.run) {
   const base = cy.setsFor(r.week, r.phase);
@@ -173,12 +174,12 @@ function ensureInputs() {
   S.ui = { key, weight: prev ? prev.weight : sug.weight, reps, breath: false, sug };
 }
 
-async function startSession(slot, walked, gymKind = 'full') {
+async function startSession(slot, walked, gymKind = 'full', finisher = 'pool') {
   const date = cy.today();
   const week = cy.weekOf(date, S.settings.startDate, S.settings.shifts);
   const phase = cy.trainingPhase(week);
   const r = {
-    id: uid(), cycleId: 'c1', slot, day: slot, date, plannedDate: date, week, phase, intro: week === 0, gymKind,
+    id: uid(), cycleId: 'c1', slot, day: slot, date, plannedDate: date, week, phase, intro: week === 0, gymKind, finisher,
     status: 'in_progress', statusManual: false, checkInAt: nowISO(), sets: [], lightDay: !!(PROGRAMS[slot] && PROGRAMS[slot].light), aborted: false,
     stage: 'wellbeing', wellbeing: {}, order: isStrength(slot) ? exercisesFor(slot, phase).map((e) => e.id) : [],
     skipped: [], current: 0, rest: null, timer: null, note: '',
@@ -276,7 +277,7 @@ function renderWorkout() {
     <button class="stop-btn" data-a="stop" aria-label="Стоп-сигналы">!</button></div>`;
   const body = {
     wellbeing: renderWellbeing, warmup: renderWarmup, exercises: renderExercises, cardio: renderCardio,
-    pool: renderPool, stretch: renderStretch, summary: renderSummary,
+    pool: renderPool, finish: renderFinish, stretch: renderStretch, summary: renderSummary,
   }[r.stage]();
   return head + `<main class="workout">${body}</main>`;
 }
@@ -317,7 +318,7 @@ function renderExercises() {
   const r = S.run;
   if (r.order.every((id) => exFinished(id))) {
     return `${renderRest()}<h2 style="margin-top:14px">Упражнения закончены</h2><p>${esc(exerciseSummaryLine())}</p>
-      ${btn(hasPool(r) ? 'К бассейну' : 'К растяжке', 'to-pool', { cls: 'btn-primary btn-xl' })}${btn('Список упражнений', 'list')}${undoButton()}`;
+      ${btn(hasFinish(r) ? 'Дальше: финиш' : 'К растяжке', 'to-pool', { cls: 'btn-primary btn-xl' })}${btn('Список упражнений', 'list')}${undoButton()}`;
   }
   ensureInputs();
   const ex = currentEx();
@@ -368,12 +369,12 @@ function exerciseSummaryLine() {
 
 function renderCardio() {
   const r = S.run;
-  const min = cy.PHASES[r.phase].cardioMin;
+  const min = r.finishCardio ? 20 : cy.PHASES[r.phase].cardioMin;
   const t = r.timer && r.timer.kind === 'cardio' ? r.timer : null;
   if (!t) {
     return `<h2 style="margin-top:14px">Кардио ${min} мин</h2><p class="lead">Зона 2: можно говорить короткими фразами. Если тренажёр показывает пульс — ориентир 105–125.</p>
       <fieldset><legend>Тренажёр</legend><div class="chips">${CARDIO_MACHINES.map((m) => chip(m.name, 'machine', m.id, r.cardioMachine === m.id)).join('')}</div></fieldset>
-      ${btn('Старт', 'cardio-start', { cls: 'btn-primary btn-xl' })}${btn(hasPool(r) ? 'Без кардио — к бассейну' : 'Без кардио — к растяжке', 'cardio-skip', { cls: 'btn-link' })}`;
+      ${btn('Старт', 'cardio-start', { cls: 'btn-primary btn-xl' })}${btn(r.finishCardio ? 'Без кардио — к растяжке' : hasFinish(r) ? 'Без кардио — к финишу' : 'Без кардио — к растяжке', 'cardio-skip', { cls: 'btn-link' })}`;
   }
   if (t.done || r.cardioEnded) {
     return `<h2 style="margin-top:14px">Кардио окончено</h2><fieldset><legend>Говорить было</legend><div class="chips">${[['easy', 'Легко'], ['phrases', 'Короткими фразами'], ['hard', 'Трудно']].map(([v, l]) => chip(l, 'talk', v, false)).join('')}</div></fieldset>`;
@@ -396,6 +397,33 @@ function renderPool() {
   return `${timerBlock('timer', t, { showTotal: true })}<button class="btn btn-pause" data-a="timer-pause">${t.pausedAt ? 'ПРОДОЛЖИТЬ' : 'ПАУЗА'}</button>${btn('Закончила', 'pool-ask')}`;
 }
 
+function renderFinish() {
+  const r = S.run;
+  const planned = r.finisher || 'pool';
+  if (r.finishPick === 'walk') {
+    const km = r.finishKm ?? Math.max(P.WALK_MIN_KM, S.settings.commuteKm);
+    return `<h2 style="margin-top:14px">Пешком из клуба</h2><p class="lead">Минимум ${P.WALK_MIN_KM} км в бодром темпе — тогда это равноценная замена бассейна.</p>
+      <div class="stepper-block"><div class="stepper-label">Сколько пройдёшь, км</div><div class="stepper"><button data-a="fin-km" data-v="-0.5" aria-label="Меньше">−</button><div class="val">${dec(km)}</div><button data-a="fin-km" data-v="0.5" aria-label="Больше">+</button></div></div>
+      <p class="note">Сначала растяжка в клубе, потом домой. Прогулка запишется в активность дня.</p>
+      ${btn('Записать и к растяжке', 'fin-walk-save', { cls: 'btn-primary btn-xl' })}${btn('Назад к выбору', 'fin', { v: '', cls: 'btn-link' })}`;
+  }
+  if (r.finishPick === 'class') {
+    const classes = P.classesFor(r.date);
+    return `<h2 style="margin-top:14px">Какое занятие?</h2><p class="sub">Сегодня в клубе. Звёзды — польза для цели.</p>
+      <div class="day-list">${classes.map((c) => {
+        const badge = c.level === 'care' ? '<span class="badge badge-care">осторожно</span>' : c.level === 'no' ? '<span class="badge badge-no">не рекомендую</span>' : '';
+        return `<button class="day-item ex-row" data-a="fin-class" data-v="${esc(c.id)}"><div class="di-icon">${icon('group')}</div><div class="di-body"><div class="di-title">${c.time} ${esc(c.name)}${stars(c.stars)}${badge}</div><div class="di-meta">${esc(c.note)}</div></div></button>`;
+      }).join('') || '<p class="note">Сегодня групповых занятий нет.</p>'}</div>
+      ${btn('Назад к выбору', 'fin', { v: '', cls: 'btn-link' })}`;
+  }
+  const opts = Object.entries(P.FINISHERS).filter(([k]) => !(k === 'cardio' && r.slot === 'cardio'))
+    .sort(([a], [b]) => (a === planned ? -1 : b === planned ? 1 : 0));
+  return `<h2 style="margin-top:14px">Финиш</h2><p class="sub">Бассейн или равноценная замена — выбери, что сегодня по силам и по настроению.</p>
+    <div class="day-list">${opts.map(([k, f]) => `<button class="day-item ex-row" data-a="fin" data-v="${k}"><div class="di-icon">${icon(f.icon)}</div>
+      <div class="di-body"><div class="di-title">${esc(f.name)}${k === planned ? ' <span class="badge badge-ok">по плану</span>' : ''}</div><div class="di-meta">${esc(k === 'pool' ? poolPlan(r.phase, r.slot).text : f.hint)}</div></div>${icon('chevR', { size: 18 })}</button>`).join('')}</div>
+    ${btn('Без финиша — к растяжке', 'fin', { v: 'none', cls: 'btn-link' })}`;
+}
+
 function renderStretch() {
   const r = S.run;
   const t = r.timer && r.timer.kind === 'stretch' ? r.timer : null;
@@ -412,7 +440,7 @@ function renderStretch() {
 function autoStatus(r) {
   if (r.aborted) return 'partial';
   if (r.slot === 'pool') return r.pool && r.pool.result !== 'none' ? 'done' : 'partial';
-  if (r.slot === 'cardio') return r.cardio && (!hasPool(r) || (r.pool && r.pool.result !== 'none')) ? 'done' : 'partial';
+  if (r.slot === 'cardio') return r.cardio ? 'done' : 'partial';
   return r.order.every((id) => exComplete(id)) ? 'done' : 'partial';
 }
 
@@ -433,13 +461,17 @@ function renderSummary() {
   }
   if (r.cardio) lines.push(`<li>Кардио: ${r.cardio.minutes} мин${r.cardio.talkTest === 'hard' ? ' · было трудно говорить — в следующий раз снизь сопротивление' : ''}</li>`);
   if (r.pool) lines.push(`<li>Бассейн: ${{ done: 'план сделан', partial: 'частично', none: 'не плавала' }[r.pool.result]}${r.pool.minutes ? `, ${r.pool.minutes} мин` : ''}</li>`);
+  if (r.finisherCardio) lines.push(`<li>Финиш: кардио ${r.finisherCardio.minutes} мин</li>`);
+  if (r.finishClass) { const c = P.classById(r.date, r.finishClass); if (c) lines.push(`<li>Финиш: ${esc(c.name)} в ${c.time}</li>`); }
+  const walkHome = S.activities.find((a) => a.sessionId === r.id && a.commute === 'from');
+  if (r.finishPick === 'walk' && walkHome) lines.push(`<li>Финиш: пешком из клуба ${dec(walkHome.distanceKm)} км</li>`);
   lines.push(`<li>Растяжка: ${r.stretchDone ? 'сделана' : 'пропущена'}</li>`);
   if (!r.summaryStatus) r.summaryStatus = autoStatus(r);
   const back = S.activities.some((a) => a.sessionId === r.id && a.commute === 'from');
   return `<h2 style="margin-top:14px">Итог</h2><p>Визит: ${minutes} мин${r.aborted ? ' · прервана по стоп-сигналу' : ''}${r.lightDay ? ' · лёгкий день' : ''}</p>
     <ul class="list">${lines.join('')}</ul>
     <fieldset><legend>Статус визита</legend><div class="chips">${chip('Сделано', 'sum-status', 'done', r.summaryStatus === 'done')}${chip('Частично', 'sum-status', 'partial', r.summaryStatus === 'partial')}</div></fieldset>
-    <fieldset><legend>Обратно пешком (~${dec(S.settings.commuteKm)} км)?</legend><div class="chips">${chip('Да', 'walk-back', 'yes', back)}${chip('Нет', 'walk-back', 'no', false)}</div></fieldset>
+    ${r.finishPick === 'walk' ? '' : `<fieldset><legend>Обратно пешком (~${dec(S.settings.commuteKm)} км)?</legend><div class="chips">${chip('Да', 'walk-back', 'yes', back)}${chip('Нет', 'walk-back', 'no', false)}</div></fieldset>`}
     <label class="field">Заметка<textarea data-f="note" rows="3">${esc(r.note || '')}</textarea></label>
     ${btn('Завершить тренировку', 'finish', { cls: 'btn-primary btn-xl' })}${r.order.length ? btn('Вернуться к упражнениям', 'stage', { v: 'exercises', cls: 'btn-link' }) : ''}
     ${btn('Не засчитывать — удалить эту тренировку', 'discard-run', { cls: 'btn-link danger-link' })}`;
@@ -575,6 +607,7 @@ const A = {
 
   // план дня
   'day-type': async (v) => { const [d, type] = splitV(v); P.setDay(d, S.plan, { type }); await savePlan(); refresh(); },
+  'day-finish': async (v) => { const [d, k] = splitV(v); P.setDay(d, S.plan, { finisher: k }); await savePlan(); refresh(); },
   'gym-kind': async (v) => { const [d, k] = splitV(v); P.setDay(d, S.plan, { gymKind: k }); await savePlan(); refresh(); },
   'day-move': (v) => { S.overlay = { type: 'move', date: v }; render(); },
   'move-to': async (v) => { const [a, b] = splitV(v); P.swapDays(a, b, S.plan); await savePlan(); S.overlay = { type: 'day', date: b }; render(); },
@@ -632,22 +665,22 @@ const A = {
   'gym-start': (v) => {
     const d = P.effective(v, S.plan);
     const slot = P.slotFor(v, S.plan, S.settings.startDate) || 'A';
-    A.checkin(slot, d.gymKind);
+    A.checkin(slot, d.gymKind, d.finisher);
   },
-  checkin: (slot, gymKind = 'full') => {
+  checkin: (slot, gymKind = 'full', finisher = 'pool') => {
     let warn = '';
     if (isStrength(slot)) {
       const last = S.sessions.filter((s) => isStrength(s.slot) && !s.retro).sort((a, b) => b.checkInAt.localeCompare(a.checkInAt))[0];
       if (last && Date.now() - new Date(last.checkInAt).getTime() < 48 * 3600 * 1000) warn = 'Между силовыми лучше 48 часов.';
     }
-    S.overlay = { type: 'walked', slot, gymKind, warn }; render();
+    S.overlay = { type: 'walked', slot, gymKind, finisher, warn }; render();
   },
   'gym-retro': async (v) => {
     const sess = S.sessions.find((s) => s.date === v && s.retro);
     if (sess) { await db.del('sessions', sess.id); S.sessions = S.sessions.filter((s) => s !== sess); return refresh(); }
     const slot = P.slotFor(v, S.plan, S.settings.startDate) || 'A';
     const week = cy.weekOf(v, S.settings.startDate);
-    const rec = { id: uid(), cycleId: 'c1', slot, day: slot, date: v, plannedDate: v, week, phase: cy.trainingPhase(week), status: 'done', retro: true, checkInAt: `${v}T12:00:00`, sets: [], gymKind: P.effective(v, S.plan).gymKind };
+    const rec = { id: uid(), cycleId: 'c1', slot, day: slot, date: v, plannedDate: v, week, phase: cy.trainingPhase(week), status: 'done', retro: true, checkInAt: `${v}T12:00:00`, sets: [], gymKind: P.effective(v, S.plan).gymKind, finisher: P.effective(v, S.plan).finisher };
     await db.put('sessions', rec); S.sessions.push(rec); refresh();
   },
   'km-edit': async (v) => {
@@ -755,7 +788,7 @@ const A = {
   'cal-nav': (v) => { if (S.cal.mode === 'week') S.cal.week += Number(v); else S.cal.month += Number(v); render(); },
 
   // тренировка
-  walked: (v) => { snd.unlock(); const { slot, gymKind } = S.overlay; S.overlay = null; S.preferSlot = null; startSession(slot, v === 'yes', gymKind); },
+  walked: (v) => { snd.unlock(); const { slot, gymKind, finisher } = S.overlay; S.overlay = null; S.preferSlot = null; startSession(slot, v === 'yes', gymKind, finisher); },
   resume: () => { snd.unlock(); snd.keepAwake(true); S.overlay = null; S.screen = 'workout'; render(); },
   minimize: () => { snd.keepAwake(false); S.screen = 'home'; render(); },
   stop: () => { S.overlay = { type: 'stop', symptoms: [] }; render(); },
@@ -858,25 +891,54 @@ const A = {
     if (n != null) r.current = n;
     S.ui = {}; await saveRun(); render();
   },
-  'to-pool': async () => { S.run.rest = null; S.run.stage = hasPool(S.run) ? 'pool' : 'stretch'; await saveRun(); render(); },
+  'to-pool': async () => { S.run.rest = null; S.run.stage = afterMain(S.run); await saveRun(); render(); },
 
   machine: (v) => { S.run.cardioMachine = v; render(); },
   'cardio-start': async () => {
     snd.unlock();
-    const min = cy.PHASES[S.run.phase].cardioMin;
+    const min = S.run.finishCardio ? 20 : cy.PHASES[S.run.phase].cardioMin;
     S.run.cardioMachine = S.run.cardioMachine || 'elliptical';
     startTimer('timer', 'cardio', [{ label: 'Кардио, зона 2', sec: min * 60, half: true, say: `Кардио ${minutesWord(min)}. Можно говорить короткими фразами` }], { endSay: 'Кардио окончено' });
     await saveRun(); render();
   },
   'cardio-end': async () => { S.run.cardioEnded = true; await saveRun(); render(); },
-  'cardio-skip': async () => { S.run.timer = null; S.run.stage = hasPool(S.run) ? 'pool' : 'stretch'; await saveRun(); render(); },
+  'cardio-skip': async () => { S.run.timer = null; S.run.stage = S.run.finishCardio ? 'stretch' : afterMain(S.run); await saveRun(); render(); },
   talk: async (v) => {
     const r = S.run;
     const t = r.timer;
     const minutes = t ? Math.round(Math.min(tState(t).el, totalSec(t)) / 60) : 0;
-    r.cardio = { minutes, machine: r.cardioMachine, talkTest: v };
-    r.timer = null; r.cardioEnded = false; r.stage = hasPool(r) ? 'pool' : 'stretch';
+    const rec = { minutes, machine: r.cardioMachine, talkTest: v };
+    if (r.finishCardio) { r.finisherCardio = rec; r.stage = 'stretch'; } else { r.cardio = rec; r.stage = afterMain(r); }
+    r.timer = null; r.cardioEnded = false;
     await saveRun(); render();
+  },
+
+  // финиш
+  fin: async (v) => {
+    const r = S.run;
+    r.finishPick = v || null;
+    if (v === 'pool') r.stage = 'pool';
+    else if (v === 'cardio') { r.finishCardio = true; r.cardioEnded = false; r.timer = null; r.stage = 'cardio'; }
+    else if (v === 'none') r.stage = 'stretch';
+    await saveRun(); window.scrollTo(0, 0); render();
+  },
+  'fin-km': (v) => { const r = S.run; r.finishKm = Math.max(P.WALK_MIN_KM, +((r.finishKm ?? Math.max(P.WALK_MIN_KM, S.settings.commuteKm)) + Number(v)).toFixed(1)); render(); },
+  'fin-walk-save': async () => {
+    const r = S.run;
+    const km = r.finishKm ?? Math.max(P.WALK_MIN_KM, S.settings.commuteKm);
+    const old = S.activities.find((a) => a.sessionId === r.id && a.commute === 'from');
+    if (old) await removeActivity(old);
+    await addActivity({ kind: 'walk', commute: 'from', distanceKm: km, minutes: Math.round(km * 12), sessionId: r.id, finisher: true });
+    r.stage = 'stretch';
+    await saveRun(); window.scrollTo(0, 0); render();
+  },
+  'fin-class': async (id) => {
+    const r = S.run;
+    const old = S.activities.find((a) => a.sessionId === r.id && a.kind === 'class');
+    if (old) await removeActivity(old);
+    await addActivity({ kind: 'class', classId: id, date: r.date, minutes: P.CLASS_MIN, sessionId: r.id });
+    r.finishClass = id; r.stage = 'stretch';
+    await saveRun(); window.scrollTo(0, 0); render();
   },
 
   'pool-start': async () => {

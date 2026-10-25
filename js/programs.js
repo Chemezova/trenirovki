@@ -192,12 +192,12 @@ export const FOLDERS = [
 
 export const PROGRAMS = {
   A: {
-    name: 'Силовая А', kind: 'gym', duration: '60–75 мин + бассейн',
+    name: 'Силовая А', kind: 'gym', duration: '60–75 мин + финиш',
     why: 'Низ тела и спина: присед, бёдра, тяга сверху, ягодицы и кор. С 5-й недели добавляется тяга гантели.',
     exercises: EXERCISES.filter((e) => e.day === 'A').map((e) => e.id),
   },
   B: {
-    name: 'Силовая Б', kind: 'gym', duration: '60–75 мин + бассейн',
+    name: 'Силовая Б', kind: 'gym', duration: '60–75 мин + финиш',
     why: 'Ноги через баланс, верх тела и кор: зашагивание, жим, тяга, плечи, ягодицы, антиротация. С 5-й недели — бицепс.',
     exercises: EXERCISES.filter((e) => e.day === 'B').map((e) => e.id),
   },
