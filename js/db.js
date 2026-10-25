@@ -1,7 +1,9 @@
 // IndexedDB: всё хранится только на устройстве
 const NAME = 'trenirovki';
-const VERSION = 1;
+const VERSION = 2;
+// хранилища, которые попадают в копию данных; фото — отдельно
 export const STORES = ['sessions', 'measurements', 'activities', 'symptoms', 'kv'];
+const ALL = [...STORES, 'photos'];
 
 let dbPromise;
 function open() {
@@ -10,7 +12,7 @@ function open() {
     const req = indexedDB.open(NAME, VERSION);
     req.onupgradeneeded = () => {
       const d = req.result;
-      for (const s of STORES) {
+      for (const s of ALL) {
         if (!d.objectStoreNames.contains(s)) d.createObjectStore(s, { keyPath: s === 'kv' ? 'key' : 'id' });
       }
     };
@@ -44,11 +46,12 @@ export async function exportAll() {
   return out;
 }
 
-export async function replaceAll(data) {
+export async function replaceAll(data, { photos = false } = {}) {
   const d = await open();
+  const stores = photos ? ALL : STORES;
   await new Promise((resolve, reject) => {
-    const t = d.transaction(STORES, 'readwrite');
-    for (const s of STORES) {
+    const t = d.transaction(stores, 'readwrite');
+    for (const s of stores) {
       const st = t.objectStore(s);
       st.clear();
       for (const o of data[s] || []) st.put(o);

@@ -4,7 +4,8 @@ import * as cy from './cycle.js';
 import * as P from './plan.js';
 import * as ST from './stats.js';
 import { esc, dec, btn, chip, icon, stars, heroArt, quoteOf, barChart, lineChart } from './ui.js';
-import { HOME_KINDS, SWAPS, TABLE_PROMPT } from './data.js';
+import { HOME_KINDS, SWAPS, TABLE_PROMPT, EX_BY_ID, STRETCHES, poolPlan } from './data.js';
+import { FOLDERS, PROGRAMS, programName } from './programs.js';
 import { hasRuVoice } from './sound.js';
 
 const MONTHS_GEN = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
@@ -23,7 +24,7 @@ export function weekLabel(week, phase) {
 }
 
 export function gymTitle(slot, kind) {
-  const base = { A: 'Силовая А', B: 'Силовая Б', cardio: 'Кардио', pool: 'Бассейн' }[slot] || 'Клуб';
+  const base = slot === 'cardio' ? 'Кардио' : programName(slot);
   return kind === 'full' && slot !== 'pool' ? `${base} + бассейн` : base;
 }
 
@@ -63,7 +64,8 @@ export function dayItemsHtml(date) {
     else if (past) act = tick('gym-retro', date, false, { disabled: !canEdit, label: 'Отметить, что была в клубе' });
     const meta = sess ? (sess.retro ? 'Отмечено задним числом' : `Сделано · ${{ done: 'полностью', partial: 'частично' }[sess.status]}`) : `${P.GYM_WINDOW.start}–${P.GYM_WINDOW.end} · ${P.GYM_KINDS[d.gymKind].hours}${timePassed && !running ? ' · время прошло' : ''}`;
     rows.push(`<div class="day-item ${cls}"><div class="di-icon">${icon(slot === 'pool' ? 'swim' : 'dumbbell')}</div>
-      <div class="di-body"><div class="di-title">${esc(gymTitle(slot, d.gymKind))}</div><div class="di-meta">${esc(meta)}</div></div>${act}</div>`);
+      <div class="di-body"><div class="di-title">${esc(gymTitle(slot, d.gymKind))}</div><div class="di-meta">${esc(meta)}</div>
+      ${PROGRAMS[slot] ? `<button class="btn-link mini-link" data-a="prog-open" data-v="${slot}">Смотреть программу</button>` : ''}</div>${act}</div>`);
     const commute = ST.activitiesOn(date).filter((a) => a.commute);
     if (commute.length) rows.push(`<div class="day-item is-done"><div class="di-icon">${icon('walk')}</div><div class="di-body"><div class="di-title">Пешком до клуба</div><div class="di-meta">${dec(commute.reduce((t, a) => t + (a.distanceKm || 0), 0))} км</div></div></div>`);
   } else {
@@ -401,7 +403,14 @@ export function renderDaySheet(date) {
   const parts = [`<div class="sheet-head"><h2>${esc(cy.capitalize(cy.fmtDate(date, true)))}</h2><button class="icon-btn" data-a="close" aria-label="Закрыть">${icon('x')}</button></div>`];
   if (planEditable && !d.cancelled) {
     parts.push(`<div class="seg" role="group"><button data-a="day-type" data-v="${date}|gym" aria-pressed="${d.type === 'gym'}">День клуба</button><button data-a="day-type" data-v="${date}|home" aria-pressed="${d.type === 'home'}">Дома</button></div>`);
-    if (d.type === 'gym') parts.push(`<div class="chips">${Object.entries(P.GYM_KINDS).map(([k, v]) => chip(v.name, 'gym-kind', `${date}|${k}`, d.gymKind === k)).join('')}</div>`);
+    if (d.type === 'gym') {
+      parts.push(`<div class="chips">${Object.entries(P.GYM_KINDS).map(([k, v]) => chip(v.name, 'gym-kind', `${date}|${k}`, d.gymKind === k)).join('')}</div>`);
+      if (d.gymKind !== 'pool') {
+        const cur = P.slotFor(date, S.plan, S.settings.startDate);
+        parts.push(`<fieldset><legend>Программа</legend><div class="chips">${chip('По плану', 'day-prog', `${date}|`, !d.program)}${FOLDERS.flatMap((f) => f.programs).map((id) => chip(PROGRAMS[id].name, 'day-prog', `${date}|${id}`, d.program === id)).join('')}</div>
+          <p class="note">По плану сегодня: ${esc(programName(cur))}. Микс — вместо А или Б, не чаще раза в неделю.</p></fieldset>`);
+      }
+    }
   }
   parts.push(`<div style="margin-top:12px">${dayItemsHtml(date)}</div>`);
   if (date <= t) {
@@ -430,6 +439,109 @@ export function renderCancelSheet(date) {
   return `<div class="sheet-head"><h2>Отменить ${esc(cy.fmtDate(date))}</h2><button class="icon-btn" data-a="day" data-v="${date}" aria-label="Назад">${icon('x')}</button></div>
     <p>Почему?</p><div class="chips">${P.CANCEL_REASONS.map(([id, l]) => chip(l, 'cancel-reason', `${date}|${id}`, false)).join('')}</div>
     <p class="note">Отменённый день не считается пропуском. Если болеешь несколько дней — отмени каждый.</p>`;
+}
+
+// ---------- программы ----------
+function currentPhase() {
+  const week = cy.weekOf(cy.today(), S.settings.startDate, S.settings.shifts);
+  return { week, phase: cy.trainingPhase(week) };
+}
+
+export function doseFor(ex, { week, phase, light = false } = currentPhase()) {
+  const base = cy.setsFor(week, phase);
+  const sets = light ? Math.max(2, base - 1) : base;
+  const r = ex.reps || cy.PHASES[phase].reps;
+  const side = (ex.reps && ex.reps.perSide) || ex.perSide;
+  return `${sets} × ${r.min}–${r.max}${side ? ' на сторону' : ''}`;
+}
+
+// Папки блогеров — из «Моих видео», по названию программы до « · »
+function bloggerFolders() {
+  const map = new Map();
+  for (const v of S.videos) {
+    const i = v.title.indexOf(' · ');
+    const name = i > 0 ? v.title.slice(0, i) : 'Отдельные видео';
+    if (!map.has(name)) map.set(name, []);
+    map.get(name).push(v);
+  }
+  return [...map.entries()].map(([name, list]) => ({ name, list: list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0)) }));
+}
+
+export function renderPrograms() {
+  const { week, phase } = currentPhase();
+  const folder = (f) => `<section class="card"><h2>${icon(f.icon, { size: 20 })} ${esc(f.name)}</h2><p class="sub">${esc(f.desc)}</p>
+    <div class="day-list">${f.programs.map((id) => {
+      const p = PROGRAMS[id];
+      const n = p.exercises.map((x) => EX_BY_ID[x]).filter((e) => e && cy.PHASE_ORDER.indexOf(phase) >= cy.PHASE_ORDER.indexOf(e.fromPhase)).length;
+      return `<button class="plan-day" data-a="prog-open" data-v="${id}"><div class="di-icon">${icon(p.kind === 'cardio' ? 'swim' : 'dumbbell')}</div>
+        <div class="pd-body"><div class="di-title">${esc(p.name)}</div><div class="di-meta">${p.kind === 'cardio' ? esc(p.duration) : `${n} упражнений · ${esc(p.duration)}`}</div></div>${icon('chevR', { size: 18 })}</button>`;
+    }).join('')}</div></section>`;
+  const bloggers = bloggerFolders();
+  return `<header class="page-title"><h1>Программы</h1><button class="icon-btn" data-a="go" data-v="settings" aria-label="Настройки">${icon('gear')}</button></header>
+    <p class="sub">${esc(weekLabel(week, phase))}: подходы и повторы в программах — для текущей недели.</p>
+    ${FOLDERS.map(folder).join('')}
+    ${bloggers.map((b) => `<section class="card"><h2>${icon('folder', { size: 20 })} ${esc(b.name)}</h2><p class="sub">Видео-комплексы · ${b.list.length}</p>
+      <div class="day-list">${b.list.map((v) => {
+        const st = videoStatus(v);
+        return `<button class="plan-day" data-a="video-open" data-v="${v.id}"><div class="di-icon">${icon(v.kind === 'yoga' ? 'yoga' : 'video')}</div><div class="pd-body"><div class="di-title">${esc(v.title.slice(b.name.length + 3) || v.title)}</div><div class="di-meta">${v.minutes} мин ${statusBadge(st)}</div></div>${icon('chevR', { size: 18 })}</button>`;
+      }).join('')}</div></section>`).join('')}
+    <section class="card"><h2>${icon('plus', { size: 20 })} Комплексы блогеров</h2><p class="sub">Загрузи видео или таблицу тренировок — для каждой программы появится своя папка, а опасные упражнения я помечу и предложу замену.</p>
+      <div class="grid2">${btn('Добавить видео', 'video-new')}${btn('Импорт таблицы', 'go', { v: 'videoImport' })}</div></section>`;
+}
+
+export function renderProgram(id) {
+  const p = PROGRAMS[id];
+  if (!p) return renderPrograms();
+  const cp = currentPhase();
+  const ctx = { ...cp, light: !!p.light };
+  const folder = FOLDERS.find((f) => f.programs.includes(id));
+  const t = cy.today();
+  const today = P.effective(t, S.plan);
+  const todaySlot = P.slotFor(t, S.plan, S.settings.startDate);
+  const isToday = today.type === 'gym' && !today.cancelled && todaySlot === id;
+  const doneToday = ST.sessionsOn(t).length > 0;
+  const ph = cy.PHASES[cp.phase];
+  const exs = p.exercises.map((x) => EX_BY_ID[x]).filter((e) => e && cy.PHASE_ORDER.indexOf(cp.phase) >= cy.PHASE_ORDER.indexOf(e.fromPhase));
+  const later = p.exercises.map((x) => EX_BY_ID[x]).filter((e) => e && !exs.includes(e));
+  const pool = poolPlan(cp.phase, id === 'cardio' ? 'cardio' : 'A');
+  const step = (n, title, body) => `<div class="day-item"><div class="di-icon step-num">${n}</div><div class="di-body"><div class="di-title">${title}</div>${body ? `<div class="di-meta">${body}</div>` : ''}</div></div>`;
+  let n = 1;
+  const steps = [step(n++, 'Разминка', `${id === 'cardio' ? 5 : 10} мин эллипс или велотренажёр, спокойно`)];
+  if (p.kind === 'cardio') steps.push(step(n++, `Кардио ${ph.cardioMin} мин`, 'Зона 2: можно говорить короткими фразами. Эллипс, велотренажёр или дорожка с наклоном 5–8%.'));
+  const exRows = exs.map((e) => `<button class="day-item ex-row" data-a="ex-open" data-v="${e.id}"><div class="di-icon">${S.photos[e.id] ? `<img src="${S.photos[e.id]}" alt="">` : icon('dumbbell')}</div>
+    <div class="di-body"><div class="di-title">${esc(e.name)}</div><div class="di-meta">${esc(doseFor(e, ctx))}${e.muscles ? ` · ${esc(e.muscles)}` : ''}</div></div>${icon('chevR', { size: 18 })}</button>`).join('');
+  const after = [step(n + (exs.length ? 1 : 0), 'Бассейн', esc(pool.text)), step(n + (exs.length ? 2 : 1), 'Растяжка', esc(STRETCHES.map((s) => s.name).join(', ')))];
+  return `<header class="page-title"><button class="icon-btn" data-a="go" data-v="back" aria-label="Назад">${icon('back')}</button><h1>${esc(p.name)}</h1></header>
+    <section class="card"><p class="sub">${esc(folder ? folder.name : '')} · ${esc(p.duration)}</p><p>${esc(p.why)}</p>
+      ${p.kind === 'gym' ? `<p><b>Сейчас (${esc(weekLabel(cp.week, cp.phase).toLowerCase())}):</b> ${Math.max(2, cy.setsFor(cp.week, cp.phase) - (p.light ? 1 : 0))} подхода, отдых ${ph.rest} с, темп 2 с вверх и 2–3 с вниз, выдох на усилии.${p.light ? ' Вес на шаг ниже обычного.' : ''}</p>` : ''}
+      ${isToday && !doneToday ? btn(`${icon('play', { size: 18 })} Начать сегодня`, 'gym-start', { v: t, cls: 'btn-primary btn-xl' }) : btn('Поставить на сегодня', 'prog-today', { v: id, cls: 'btn-secondary' })}</section>
+    <h2 class="section-title">Порядок тренировки</h2>
+    <div class="day-list">${steps.join('')}
+      ${exs.length ? `<div class="day-item"><div class="di-icon step-num">${n}</div><div class="di-body"><div class="di-title">Упражнения · ${exs.length}</div><div class="di-meta">Тапни упражнение — техника, тренажёр, фото</div></div></div>${exRows}` : ''}
+      ${after.join('')}</div>
+    ${later.length ? `<p class="note">С 5-й недели добавятся: ${later.map((e) => esc(e.name)).join(', ')}.</p>` : ''}`;
+}
+
+export function renderExerciseCard(id) {
+  const e = EX_BY_ID[id];
+  if (!e) return '';
+  const photo = S.photos[id];
+  const q = encodeURIComponent(e.nameEn + (e.loadType === 'machine' || e.loadType === 'cable' ? ' machine' : ' exercise'));
+  return `<div class="sheet-head"><h2>${esc(e.name)}</h2><button class="icon-btn" data-a="close" aria-label="Закрыть">${icon('x')}</button></div>
+    ${photo ? `<img class="ex-photo" src="${photo}" alt="Фото тренажёра">` : ''}
+    <p class="sub">${esc(doseFor(e))}${e.muscles ? ` · ${esc(e.muscles)}` : ''}</p>
+    ${e.eyeNote ? `<p class="eye-note">${esc(e.eyeNote)}</p>` : ''}
+    ${e.machine ? `<h3>Как выглядит</h3><p>${esc(e.machine)}</p>` : ''}
+    <h3>Исходное положение</h3><p>${esc(e.setup)}</p>
+    <h3>Движение</h3><p>${esc(e.movement)}</p>
+    <h3>Частые ошибки</h3><p>${esc(e.mistakes)}</p>
+    <h3>Требования</h3><p>Выдох на усилии, без задержки дыхания. Темп 2 с на усилие, 2–3 с на возврат. Взгляд прямо, шея продолжает позвоночник. Если тянет задержать дыхание или напрягается лицо — вес слишком большой.</p>
+    <div class="link-row">
+      <a class="btn btn-secondary btn-small" href="https://www.google.com/search?tbm=isch&q=${q}" target="_blank" rel="noopener">${icon('image', { size: 16 })} Как выглядит — фото</a>
+      <a class="btn btn-secondary btn-small" href="https://www.youtube.com/results?search_query=${encodeURIComponent(`${e.nameEn} technique`)}" target="_blank" rel="noopener">${icon('play', { size: 16 })} Видео техники</a>
+      <label class="btn btn-secondary btn-small file-btn">${icon('camera', { size: 16 })} ${photo ? 'Заменить своё фото' : 'Своё фото тренажёра'}<input type="file" accept="image/*" capture="environment" data-f="ex-photo" data-k="${id}" hidden></label>
+    </div>
+    ${photo ? btn('Удалить своё фото', 'ex-photo-del', { v: id, cls: 'btn-link danger-link' }) : '<p class="note">Сфотографируй тренажёр в своём клубе — фото будет видно здесь и в списке упражнений. Хранится только на телефоне.</p>'}`;
 }
 
 // ---------- библиотека видео ----------

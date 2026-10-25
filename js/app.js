@@ -12,7 +12,7 @@ import {
 } from './data.js';
 
 const $app = document.getElementById('app');
-const SLOT_NAMES = { A: 'Силовая А', B: 'Силовая Б', cardio: 'Кардио + бассейн', pool: 'Бассейн' };
+import { PROGRAMS, programName, isStrength } from './programs.js';
 
 // ---------- утилиты ----------
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -33,6 +33,9 @@ async function load() {
     else if (key === 'health') S.health = value || {};
     else if (key === 'videos') S.videos = value || [];
     else if (key.startsWith('ex:')) S.exSettings[key.slice(3)] = value;
+  }
+  for (const p of await db.getAll('photos')) {
+    try { S.photos[p.id] = URL.createObjectURL(p.blob); } catch (e) { /* битое фото */ }
   }
   const sessions = await db.getAll('sessions');
   S.run = sessions.find((s) => s.status === 'in_progress') || null;
@@ -78,7 +81,8 @@ async function removeActivity(rec) {
 
 // ---------- логика тренировки ----------
 const phaseIdx = (p) => cy.PHASE_ORDER.indexOf(p);
-const exercisesFor = (slot, phase) => EXERCISES.filter((e) => e.day === slot && phaseIdx(phase) >= phaseIdx(e.fromPhase));
+const exercisesFor = (slot, phase) => (PROGRAMS[slot] ? PROGRAMS[slot].exercises.map((id) => EX_BY_ID[id]) : [])
+  .filter((e) => e && phaseIdx(phase) >= phaseIdx(e.fromPhase));
 const rangeFor = (ex, phase) => ex.reps || cy.PHASES[phase].reps;
 const perSide = (ex) => !!((ex.reps && ex.reps.perSide) || ex.perSide);
 const exSet = (ex) => S.exSettings[ex.id] || {};
@@ -154,8 +158,8 @@ async function startSession(slot, walked, gymKind = 'full') {
   const phase = cy.trainingPhase(week);
   const r = {
     id: uid(), cycleId: 'c1', slot, day: slot, date, plannedDate: date, week, phase, intro: week === 0, gymKind,
-    status: 'in_progress', statusManual: false, checkInAt: nowISO(), sets: [], lightDay: false, aborted: false,
-    stage: 'wellbeing', wellbeing: {}, order: slot === 'A' || slot === 'B' ? exercisesFor(slot, phase).map((e) => e.id) : [],
+    status: 'in_progress', statusManual: false, checkInAt: nowISO(), sets: [], lightDay: !!(PROGRAMS[slot] && PROGRAMS[slot].light), aborted: false,
+    stage: 'wellbeing', wellbeing: {}, order: isStrength(slot) ? exercisesFor(slot, phase).map((e) => e.id) : [],
     skipped: [], current: 0, rest: null, timer: null, note: '',
   };
   if (walked) await addActivity({ kind: 'walk', commute: 'to', distanceKm: S.settings.commuteKm, sessionId: r.id });
@@ -245,7 +249,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 // ---------- экран тренировки ----------
 function renderWorkout() {
   const r = S.run;
-  const head = `<div class="topbar"><div class="topbar-title">${esc(SLOT_NAMES[r.slot])}<span>${esc(V.weekLabel(r.week, r.phase))}${r.lightDay ? ' · лёгкий день' : ''}</span></div>
+  const head = `<div class="topbar"><div class="topbar-title">${esc(programName(r.slot))}<span>${esc(V.weekLabel(r.week, r.phase))}${r.lightDay ? ' · лёгкий день' : ''}</span></div>
     <button class="btn btn-small btn-secondary" data-a="minimize">Свернуть</button>
     ${r.stage !== 'summary' ? '<button class="btn btn-small btn-primary" data-a="end-early">Завершить</button>' : ''}
     <button class="stop-btn" data-a="stop" aria-label="Стоп-сигналы">!</button></div>`;
@@ -503,21 +507,19 @@ function renderOverlay() {
       return `<button class="row-btn" data-a="goto-ex" data-v="${i}" ${i === r.current ? 'aria-current="true"' : ''}><b>${i + 1}. ${esc(EX_BY_ID[id].name)}</b><span>${mark}</span></button>`;
     }).join('')}</div>${btn('Закрыть', 'close')}`;
   } else if (o.type === 'tech') {
-    const ex = currentEx();
-    inner = `<h2>${esc(ex.name)}</h2>${ex.eyeNote ? `<p class="eye-note">${esc(ex.eyeNote)}</p>` : ''}
-      <h3>Исходное</h3><p>${esc(ex.setup)}</p><h3>Движение</h3><p>${esc(ex.movement)}</p><h3>Ошибки</h3><p>${esc(ex.mistakes)}</p>
-      <p>Выдох на усилии. Темп 2 с на усилие, 2–3 с на возврат. Взгляд прямо.</p>
-      <a class="btn btn-secondary" href="https://www.youtube.com/results?search_query=${encodeURIComponent(`${ex.nameEn} technique`)}" target="_blank" rel="noopener">Видео на YouTube</a>${btn('Закрыть', 'close')}`;
+    inner = V.renderExerciseCard(currentEx().id);
+  } else if (o.type === 'ex') {
+    inner = V.renderExerciseCard(o.id);
   }
   return `<div class="overlay" data-a="overlay-bg"><div class="sheet" role="dialog" aria-modal="true">${inner}</div></div>`;
 }
 
 // ---------- навигация ----------
-const TABS = [['home', 'Главная', 'home'], ['calendar', 'План', 'calendar'], ['goals', 'Цели', 'chart']];
+const TABS = [['home', 'Главная', 'home'], ['calendar', 'План', 'calendar'], ['programs', 'Программы', 'folder'], ['goals', 'Цели', 'chart']];
 let prevScreen = 'home';
 function go(screen) {
   if (screen === 'back') screen = prevScreen || 'home';
-  else if (['home', 'calendar', 'goals'].includes(S.screen)) prevScreen = S.screen;
+  else if (['home', 'calendar', 'goals', 'programs'].includes(S.screen)) prevScreen = S.screen;
   S.screen = screen;
   S.overlay = null;
   if (!['measure', 'homeLog', 'videoForm', 'videoImport'].includes(screen)) S.form = {};
@@ -529,6 +531,7 @@ function renderMain() {
   const screens = {
     home: V.renderHome, calendar: V.renderCalendar, goals: V.renderGoals, settings: V.renderSettings, measure: renderMeasure, homeLog: renderHomeLog,
     videos: V.renderVideos, videoForm: V.renderVideoForm, videoImport: V.renderVideoImport,
+    programs: V.renderPrograms, program: () => V.renderProgram(S.progId),
   };
   const body = (screens[S.screen] || V.renderHome)();
   const active = TABS.some(([id]) => id === S.screen) ? S.screen : prevScreen;
@@ -612,8 +615,8 @@ const A = {
   },
   checkin: (slot, gymKind = 'full') => {
     let warn = '';
-    if (slot === 'A' || slot === 'B') {
-      const last = S.sessions.filter((s) => (s.slot === 'A' || s.slot === 'B') && !s.retro).sort((a, b) => b.checkInAt.localeCompare(a.checkInAt))[0];
+    if (isStrength(slot)) {
+      const last = S.sessions.filter((s) => isStrength(s.slot) && !s.retro).sort((a, b) => b.checkInAt.localeCompare(a.checkInAt))[0];
       if (last && Date.now() - new Date(last.checkInAt).getTime() < 48 * 3600 * 1000) warn = 'Между силовыми лучше 48 часов.';
     }
     S.overlay = { type: 'walked', slot, gymKind, warn }; render();
@@ -646,6 +649,22 @@ const A = {
     await saveHealth();
     alert(`Шаги загружены: ${dates.map((d) => `${cy.fmtShort(d)} — ${(parsed[d].steps || 0).toLocaleString('ru-RU')}`).join(', ')}`);
     refresh();
+  },
+
+  // программы
+  'prog-open': (id) => { S.progId = id; go('program'); },
+  'ex-open': (id) => { S.overlay = { type: 'ex', id }; render(); },
+  'prog-today': async (id) => {
+    const t = cy.today();
+    P.setDay(t, S.plan, { type: 'gym', cancelled: null, program: id, gymKind: P.effective(t, S.plan).gymKind === 'pool' ? 'full' : P.effective(t, S.plan).gymKind });
+    await savePlan(); refresh();
+  },
+  'day-prog': async (v) => { const [d, id] = splitV(v); P.setDay(d, S.plan, { program: id || null }); await savePlan(); refresh(); },
+  'ex-photo-del': async (id) => {
+    if (!confirm('Удалить своё фото тренажёра?')) return;
+    await db.del('photos', id);
+    if (S.photos[id]) URL.revokeObjectURL(S.photos[id]);
+    delete S.photos[id]; refresh();
   },
 
   // библиотека видео
@@ -947,6 +966,21 @@ async function doExport() {
   markDone();
 }
 
+// Уменьшает фото с камеры до ~1200 px, чтобы не занимать память телефона
+async function shrinkImage(file, max = 1200) {
+  try {
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(bmp.width * k);
+    c.height = Math.round(bmp.height * k);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    return await new Promise((res) => c.toBlob((b) => res(b || file), 'image/jpeg', 0.82));
+  } catch (e) {
+    return file;
+  }
+}
+
 async function doImport(file) {
   try {
     const data = JSON.parse(await file.text());
@@ -988,6 +1022,14 @@ $app.addEventListener('change', async (e) => {
   else if (f === 'startDate' && v) { S.settings.startDate = v; await saveSettings(); render(); }
   else if (f === 'commuteKm' || f === 'goalLossKg') { const n = num(v); if (n != null) { S.settings[f] = n; await saveSettings(); } }
   else if (f === 'import' && e.target.files[0]) doImport(e.target.files[0]);
+  else if (f === 'ex-photo' && e.target.files[0]) {
+    const id = e.target.dataset.k;
+    const blob = await shrinkImage(e.target.files[0]);
+    await db.put('photos', { id, blob, at: nowISO() });
+    if (S.photos[id]) URL.revokeObjectURL(S.photos[id]);
+    S.photos[id] = URL.createObjectURL(blob);
+    render();
+  }
 });
 
 $app.addEventListener('input', (e) => {

@@ -14,6 +14,8 @@ export const S = {
   plan: { days: {} },   // переопределения плана по датам
   health: {},           // date → { steps, km, source }
   videos: [],           // библиотека видео-тренировок со ссылками
+  photos: {},           // exerciseId → objectURL своего фото тренажёра
+  progId: null,         // открытая программа
   run: null,            // тренировка в процессе
   overlay: null,
   ui: {},

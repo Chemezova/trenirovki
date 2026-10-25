@@ -54,7 +54,7 @@ export const classById = (date, id) => classesFor(date).find((c) => c.id === id)
 export function effective(date, plan) {
   const o = plan.days[date] || {};
   const type = o.type || (DEFAULT_GYM_WEEKDAYS.includes(cy.weekday(date)) ? 'gym' : 'home');
-  return { date, type, gymKind: o.gymKind || 'full', classId: o.classId || null, cancelled: o.cancelled || null };
+  return { date, type, gymKind: o.gymKind || 'full', classId: o.classId || null, cancelled: o.cancelled || null, program: o.program || null };
 }
 
 export const weekDates = (ws) => Array.from({ length: 7 }, (_, i) => cy.addDays(ws, i));
@@ -67,6 +67,7 @@ export function slotFor(date, plan, startDate) {
   const day = effective(date, plan);
   if (day.type !== 'gym' || day.cancelled) return null;
   if (day.gymKind === 'pool') return 'pool';
+  if (day.program) return day.program;
   const week = cy.weekOf(date, startDate);
   if (week === 0) return 'A';
   const gyms = weekDates(cy.weekStart(date)).map((d) => effective(d, plan)).filter((d) => d.type === 'gym' && !d.cancelled && d.gymKind !== 'pool');

@@ -107,7 +107,7 @@ export function typeBreakdown(from, to) {
     const cardio = s.cardio ? s.cardio.minutes || 0 : 0;
     if (pool) add('pool', pool);
     if (s.slot === 'cardio' && (cardio || s.retro)) add('cardio', cardio || 40);
-    if (s.slot === 'A' || s.slot === 'B') add('gym', Math.max(20, sessionMinutes(s) - pool - cardio));
+    if (s.slot && s.slot !== 'cardio' && s.slot !== 'pool') add('gym', Math.max(20, sessionMinutes(s) - pool - cardio));
   }
   for (const a of S.activities) {
     if (a.date < from || a.date > to) continue;
