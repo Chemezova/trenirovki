@@ -1,7 +1,7 @@
 // План недели: дни зала, домашние дни, групповые занятия клуба
 import * as cy from './cycle.js';
 
-export const DEFAULT_GYM_WEEKDAYS = [1, 3, 5];
+export const DEFAULT_GYM_WEEKDAYS = [2, 4, 7];
 export const GYM_WINDOW = { start: '11:30', end: '15:30' };
 
 // Финиш после силовой: бассейн по умолчанию или равноценная замена
@@ -14,7 +14,7 @@ export const FINISHERS = {
 export const WALK_MIN_KM = 3;
 
 export const GYM_KINDS = {
-  full: { name: 'Зал + финиш', hours: '3–3,5 ч', min: 195 },
+  full: { name: 'Зал + бассейн', hours: '3–3,5 ч', min: 195 },
   gym: { name: 'Только зал', hours: '1,5–2 ч', min: 105 },
   pool: { name: 'Только бассейн', hours: '1,5–2 ч', min: 105 },
 };

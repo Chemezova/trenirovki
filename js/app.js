@@ -8,11 +8,11 @@ import { suggest, roundToStep } from './progression.js';
 import { esc, dec, btn, chip, icon, stars } from './ui.js';
 import * as V from './views.js';
 import {
-  EXERCISES, EX_BY_ID, STRETCHES, poolPlan, CARDIO_MACHINES, STOP_MAIN, STOP_SECONDARY, SYMPTOMS, HOME_KINDS, TABLE_PROMPT,
+  EXERCISES, EX_BY_ID, STRETCHES, poolPlan, CARDIO_MACHINES, STOP_MAIN, STOP_SECONDARY, SYMPTOMS, HOME_KINDS, TABLE_PROMPT, SPA_RULES,
 } from './data.js';
 
 const $app = document.getElementById('app');
-import { PROGRAMS, programName, isStrength, programExercises } from './programs.js';
+import { PROGRAMS, programName, isStrength, programExercises, aquaPlan } from './programs.js';
 
 // ---------- утилиты ----------
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -90,7 +90,7 @@ const stepFor = (ex) => exSet(ex).weightStep || ex.weightStep;
 const loadTypeFor = (ex) => exSet(ex).loadTypeOverride || ex.loadType;
 const modeFor = (ex) => (ex.progression === 'repsOnly' && loadTypeFor(ex) === 'dumbbell' ? 'double' : ex.progression);
 const hasFinish = (r) => r.gymKind !== 'gym';
-const afterMain = (r) => (hasFinish(r) ? 'finish' : 'stretch');
+const afterMain = (r) => (hasFinish(r) ? 'pool' : 'stretch');
 
 function setsTarget(r = S.run) {
   const base = cy.setsFor(r.week, r.phase);
@@ -248,6 +248,7 @@ function tick() {
       snd.announce(t.endSay || 'Время', 'end');
       if (key === 'rest') r.rest = null;
       if (t.kind === 'stretch') { r.stretchDone = true; r.timer = null; r.stage = 'summary'; }
+      if (t.kind === 'aqua') { r.aqua = { minutes: Math.round(totalSec(t) / 60), full: true }; r.timer = null; r.stage = 'spa'; }
       changed = true; rerender = true;
     }
     if (S.screen === 'workout') updateTimerDom(key, st, t);
@@ -277,7 +278,7 @@ function renderWorkout() {
     <button class="stop-btn" data-a="stop" aria-label="Стоп-сигналы">!</button></div>`;
   const body = {
     wellbeing: renderWellbeing, warmup: renderWarmup, exercises: renderExercises, cardio: renderCardio,
-    pool: renderPool, finish: renderFinish, stretch: renderStretch, summary: renderSummary,
+    pool: renderPool, finish: renderFinish, aqua: renderAqua, spa: renderSpa, stretch: renderStretch, summary: renderSummary,
   }[r.stage]();
   return head + `<main class="workout">${body}</main>`;
 }
@@ -285,7 +286,7 @@ function renderWorkout() {
 function renderWellbeing() {
   const w = S.run.wellbeing;
   const row = (label, field, opts) => `<fieldset><legend>${label}</legend><div class="chips">${opts.map(([v, l]) => chip(l, 'wb', `${field}:${v}`, w[field] === v)).join('')}</div></fieldset>`;
-  return `<h2 style="margin-top:14px">Как ты сегодня?</h2>
+  return `<h2 style="margin-top:14px">Как ты сегодня?</h2>${S.run.warn ? `<p class="note">${esc(S.run.warn)}</p>` : ''}
     ${row('Сон', 'sleep', [['bad', 'Плохо'], ['ok', 'Нормально'], ['good', 'Хорошо']])}
     ${row('Силы', 'energy', [['low', 'Мало'], ['ok', 'Нормально'], ['high', 'Много']])}
     ${row('Давление в глазах или голове', 'pressure', [['no', 'Нет'], ['yes', 'Есть']])}
@@ -424,6 +425,30 @@ function renderFinish() {
     ${btn('Без финиша — к растяжке', 'fin', { v: 'none', cls: 'btn-link' })}`;
 }
 
+function renderAqua() {
+  const r = S.run;
+  const plan = aquaPlan(r.phase);
+  const t = r.timer && r.timer.kind === 'aqua' ? r.timer : null;
+  if (!t) {
+    return `<h2 style="margin-top:14px">Аквааэробика</h2><p class="big-text">${esc(plan.text)}</p>
+      <ol class="list">${programExercises('pool', r.phase).map((e) => `<li><button class="btn-link" data-a="ex-open" data-v="${e.id}">${esc(e.name)}</button></li>`).join('')}</ol>
+      <p>Телефон у бортика. Голос назовёт каждое упражнение, высокий сигнал — работа, низкий — переход. Голова над водой, дыши свободно.</p>
+      ${btn('Старт аквааэробики', 'aqua-start', { cls: 'btn-primary btn-xl' })}${btn('Без аквааэробики — к спа', 'aqua-skip', { cls: 'btn-link' })}`;
+  }
+  return `${timerBlock('timer', t, { showTotal: true })}<button class="btn btn-pause" data-a="timer-pause">${t.pausedAt ? 'ПРОДОЛЖИТЬ' : 'ПАУЗА'}</button>
+    <div class="row2">${btn('Дальше', 'timer-next')}${btn('Закончила', 'aqua-end')}</div>`;
+}
+
+function renderSpa() {
+  const r = S.run;
+  const spa = r.spa || (r.spa = { hydro: false, sauna: [], visits: 0 });
+  return `<h2 style="margin-top:14px">Гидромассаж и сауна</h2>
+    <div class="chips">${chip('Гидромассаж', 'spa', 'hydro', spa.hydro)}${chip('Финская сауна', 'spa', 'finnish', spa.sauna.includes('finnish'))}${chip('Турецкая баня', 'spa', 'turkish', spa.sauna.includes('turkish'))}</div>
+    <fieldset><legend>Заходов в сауну</legend><div class="chips">${[1, 2, 3].map((n) => chip(String(n), 'spa-visits', String(n), spa.visits === n)).join('')}</div></fieldset>
+    <ul class="list">${SPA_RULES.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+    ${btn('Дальше: растяжка', 'stage', { v: 'stretch', cls: 'btn-primary btn-xl' })}`;
+}
+
 function renderStretch() {
   const r = S.run;
   const t = r.timer && r.timer.kind === 'stretch' ? r.timer : null;
@@ -464,14 +489,14 @@ function renderSummary() {
   if (r.finisherCardio) lines.push(`<li>Финиш: кардио ${r.finisherCardio.minutes} мин</li>`);
   if (r.finishClass) { const c = P.classById(r.date, r.finishClass); if (c) lines.push(`<li>Финиш: ${esc(c.name)} в ${c.time}</li>`); }
   const walkHome = S.activities.find((a) => a.sessionId === r.id && a.commute === 'from');
-  if (r.finishPick === 'walk' && walkHome) lines.push(`<li>Финиш: пешком из клуба ${dec(walkHome.distanceKm)} км</li>`);
+  if (r.aqua) lines.push(`<li>Аквааэробика: ${r.aqua.minutes} мин</li>`);
+  if (r.spa) lines.push(`<li>Спа: ${[r.spa.hydro ? 'гидромассаж' : '', ...(r.spa.sauna || []).map((x) => (x === 'finnish' ? 'финская сауна' : 'турецкая баня'))].filter(Boolean).join(', ') || 'нет'}${r.spa.visits ? ` · заходов ${r.spa.visits}` : ''}</li>`);
   lines.push(`<li>Растяжка: ${r.stretchDone ? 'сделана' : 'пропущена'}</li>`);
   if (!r.summaryStatus) r.summaryStatus = autoStatus(r);
   const back = S.activities.some((a) => a.sessionId === r.id && a.commute === 'from');
   return `<h2 style="margin-top:14px">Итог</h2><p>Визит: ${minutes} мин${r.aborted ? ' · прервана по стоп-сигналу' : ''}${r.lightDay ? ' · лёгкий день' : ''}</p>
     <ul class="list">${lines.join('')}</ul>
     <fieldset><legend>Статус визита</legend><div class="chips">${chip('Сделано', 'sum-status', 'done', r.summaryStatus === 'done')}${chip('Частично', 'sum-status', 'partial', r.summaryStatus === 'partial')}</div></fieldset>
-    ${r.finishPick === 'walk' ? '' : `<fieldset><legend>Обратно пешком (~${dec(S.settings.commuteKm)} км)?</legend><div class="chips">${chip('Да', 'walk-back', 'yes', back)}${chip('Нет', 'walk-back', 'no', false)}</div></fieldset>`}
     <label class="field">Заметка<textarea data-f="note" rows="3">${esc(r.note || '')}</textarea></label>
     ${btn('Завершить тренировку', 'finish', { cls: 'btn-primary btn-xl' })}${r.order.length ? btn('Вернуться к упражнениям', 'stage', { v: 'exercises', cls: 'btn-link' }) : ''}
     ${btn('Не засчитывать — удалить эту тренировку', 'discard-run', { cls: 'btn-link danger-link' })}`;
@@ -673,7 +698,10 @@ const A = {
       const last = S.sessions.filter((s) => isStrength(s.slot) && !s.retro).sort((a, b) => b.checkInAt.localeCompare(a.checkInAt))[0];
       if (last && Date.now() - new Date(last.checkInAt).getTime() < 48 * 3600 * 1000) warn = 'Между силовыми лучше 48 часов.';
     }
-    S.overlay = { type: 'walked', slot, gymKind, finisher, warn }; render();
+    snd.unlock();
+    S.preferSlot = null;
+    S.overlay = null;
+    startSession(slot, false, gymKind, finisher).then(() => { if (warn && S.run) { S.run.warn = warn; saveRun(); render(); } });
   },
   'gym-retro': async (v) => {
     const sess = S.sessions.find((s) => s.date === v && s.retro);
@@ -941,6 +969,20 @@ const A = {
     await saveRun(); window.scrollTo(0, 0); render();
   },
 
+  'aqua-start': async () => { snd.unlock(); const plan = aquaPlan(S.run.phase); startTimer('timer', 'aqua', plan.segments, { endSay: 'Аквааэробика окончена. Дальше гидромассаж и сауна' }); await saveRun(); render(); },
+  'aqua-end': async () => { const r = S.run; const t = r.timer; r.aqua = { minutes: t ? Math.round(Math.min(tState(t).el, totalSec(t)) / 60) : 0 }; r.timer = null; r.stage = 'spa'; await saveRun(); render(); },
+  'aqua-skip': async () => { S.run.timer = null; S.run.stage = 'spa'; await saveRun(); render(); },
+  spa: async (v) => {
+    const spa = S.run.spa;
+    if (v === 'hydro') spa.hydro = !spa.hydro;
+    else spa.sauna = spa.sauna.includes(v) ? spa.sauna.filter((x) => x !== v) : [...spa.sauna, v];
+    await saveRun(); render();
+  },
+  'spa-visits': async (v) => { S.run.spa.visits = Number(v); await saveRun(); render(); },
+  'commute-del': async (d) => {
+    for (const a of S.activities.filter((x) => x.date === d && x.commute)) await removeActivity(a);
+    refresh();
+  },
   'pool-start': async () => {
     snd.unlock();
     const plan = poolPlan(S.run.phase, S.run.slot === 'pool' ? 'cardio' : S.run.slot);
@@ -952,7 +994,7 @@ const A = {
     const r = S.run;
     const t = r.timer && r.timer.kind === 'pool' ? r.timer : null;
     r.pool = { result: v, minutes: t ? Math.round(Math.min(tState(t).el, totalSec(t)) / 60) : undefined };
-    r.timer = null; r.poolAsk = false; r.stage = 'stretch';
+    r.timer = null; r.poolAsk = false; r.stage = v === 'none' ? 'spa' : 'aqua';
     await saveRun(); render();
   },
 
@@ -1104,6 +1146,7 @@ $app.addEventListener('change', async (e) => {
   else if (f === 'v-url' || f === 'v-ext') { S.form[f === 'v-url' ? 'url' : 'extUrl'] = v; render(); }
   else if (['v-title', 'v-notes', 'imp-text', 'imp-source'].includes(f)) S.form[{ 'v-title': 'title', 'v-notes': 'skipNotes', 'imp-text': 'text', 'imp-source': 'source' }[f]] = v;
   else if (f === 'startDate' && v) { S.settings.startDate = v; await saveSettings(); render(); }
+  else if (f === 'name') { S.settings.name = v.trim(); await saveSettings(); }
   else if (f === 'commuteKm' || f === 'goalLossKg') { const n = num(v); if (n != null) { S.settings[f] = n; await saveSettings(); } }
   else if (f === 'import' && e.target.files[0]) doImport(e.target.files[0]);
   else if (f === 'imp-file' && e.target.files[0]) { S.form.text = await e.target.files[0].text(); render(); }

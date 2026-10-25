@@ -43,7 +43,7 @@ export function dayMinutes(date) {
 }
 export const homeMinutesOn = (date) => activitiesOn(date).filter((a) => HOME_KINDS.includes(a.kind)).reduce((t, a) => t + (a.minutes || 0), 0);
 export function swimMinutesOn(date) {
-  return sessionsOn(date).reduce((t, s) => t + (s.pool && s.pool.result !== 'none' ? s.pool.minutes || 25 : 0), 0);
+  return sessionsOn(date).reduce((t, s) => t + (s.pool && s.pool.result !== 'none' ? s.pool.minutes || 25 : 0) + (s.aqua ? s.aqua.minutes || 0 : 0), 0);
 }
 export const gymOn = (date) => sessionsOn(date).some((s) => s.slot && s.slot !== 'pool');
 
@@ -103,7 +103,7 @@ export function typeBreakdown(from, to) {
   const add = (id, minutes, km = 0) => { r[id].count += 1; r[id].minutes += Math.round(minutes || 0); r[id].km += km; };
   for (const s of S.sessions) {
     if (s.date < from || s.date > to || !(s.status === 'done' || s.status === 'partial')) continue;
-    const pool = s.pool && s.pool.result !== 'none' ? s.pool.minutes || 25 : s.retro && s.gymKind !== 'gym' && (s.finisher || 'pool') === 'pool' ? 25 : 0;
+    const pool = (s.pool && s.pool.result !== 'none' ? s.pool.minutes || 25 : s.retro && s.gymKind !== 'gym' ? 45 : 0) + (s.aqua ? s.aqua.minutes || 0 : 0);
     const cardio = (s.cardio ? s.cardio.minutes || 0 : 0) + (s.finisherCardio ? s.finisherCardio.minutes || 0 : 0);
     if (pool) add('pool', pool);
     if (s.finisherCardio) add('cardio', s.finisherCardio.minutes);
@@ -126,6 +126,15 @@ export function typeBreakdown(from, to) {
 export function parseHealth(text) {
   const out = {};
   for (const line of String(text).split(/[\r\n]+/)) {
+    // история по дням: «S;2026-10-20;8123» — шаги, «K;2026-10-20;5,4» — км
+    const sk = line.trim().match(/^(?:TR;)?([SK]);\s*(\d{4}-\d{2}-\d{2})[^;]*;\s*([\d\s.,]+)/i);
+    if (sk) {
+      const v = parseFloat(sk[3].replace(/\s/g, '').replace(',', '.'));
+      if (!Number.isFinite(v)) continue;
+      const rec = out[sk[2]] || (out[sk[2]] = { source: 'health' });
+      if (sk[1].toUpperCase() === 'S') rec.steps = Math.round(v); else rec.km = +v.toFixed(2);
+      continue;
+    }
     const m = line.trim().match(/^(?:TR;)?(\d{4}-\d{2}-\d{2});\s*([\d\s]+)(?:;\s*([\d.,]+))?/);
     if (!m) continue;
     const steps = parseInt(m[2].replace(/\s/g, ''), 10);

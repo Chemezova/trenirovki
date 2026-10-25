@@ -1,7 +1,7 @@
 // Общее состояние приложения
 import * as cy from './cycle.js';
 
-export const DEFAULT_SETTINGS = { startDate: cy.DEFAULT_START, shifts: [], voice: true, commuteKm: 4, lastBackupAt: null, goalLossKg: 7 };
+export const DEFAULT_SETTINGS = { startDate: cy.DEFAULT_START, shifts: [], voice: true, commuteKm: 4, lastBackupAt: null, goalLossKg: 7, name: 'Елена' };
 
 export const S = {
   screen: 'home',

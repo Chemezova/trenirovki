@@ -8,7 +8,8 @@
 <script type="module">
 import * as cy from './js/cycle.js';
 import { suggest } from './js/progression.js';
-import { programExercises, upcomingSwaps } from './js/programs.js';
+import { programExercises, upcomingSwaps, aquaPlan } from './js/programs.js';
+import { parseHealth } from './js/stats.js';
 
 const out = document.getElementById('out');
 let pass = 0, fail = 0;
@@ -43,10 +44,10 @@ eq('начало недели 23.10', cy.weekStart('2026-10-23'), '2026-10-19');
 
 // какую тренировку предложить
 eq('пятница вводной недели → А', cy.plannedSlot('2026-10-23', 0, new Set()).slot, 'A');
-eq('понедельник → А', cy.plannedSlot('2026-10-26', 1, new Set()).slot, 'A');
-eq('вторник после пропущенного Пн → А вне расписания', cy.plannedSlot('2026-10-27', 1, new Set()), { slot: 'A', scheduled: false });
-eq('пятница, А уже сделана во вт → Б', cy.plannedSlot('2026-10-30', 1, new Set(['A', 'cardio'])).slot, 'B');
-eq('среда, А не сделана → кардио по плану', cy.plannedSlot('2026-10-28', 1, new Set()).slot, 'cardio');
+eq('вторник → А по расписанию', cy.plannedSlot('2026-10-27', 1, new Set()), { slot: 'A', scheduled: true });
+eq('среда после пропущенного Вт → А вне расписания', cy.plannedSlot('2026-10-28', 1, new Set()), { slot: 'A', scheduled: false });
+eq('воскресенье, А и кардио сделаны → Б', cy.plannedSlot('2026-11-01', 1, new Set(['A', 'cardio'])), { slot: 'B', scheduled: true });
+eq('четверг, А не сделана → кардио по плану', cy.plannedSlot('2026-10-29', 1, new Set()).slot, 'cardio');
 
 // подсказка веса
 const R = { min: 12, max: 15 };
@@ -84,6 +85,13 @@ eq('Б, разгрузка: те же варианты, что в неделе 1
 eq('Число упражнений не меняется при замене', [ids('A', 'p2').length, ids('A', 'p3').length, ids('B', 'p2').length, ids('B', 'p3').length], [7, 7, 7, 7]);
 eq('День ног в фазе 3 без замен', ids('legs', 'p3')[0], 'goblet-box-squat');
 eq('Анонс замен в фазе 2 и пусто в фазе 3', [upcomingSwaps('A', 'p2').length, upcomingSwaps('A', 'p3').length], [3, 0]);
+
+// бассейн и шаги
+eq('аквааэробика, неделя 1: 2 круга по 30 с', [aquaPlan('p1').rounds, aquaPlan('p1').sec], [2, 30]);
+eq('аквааэробика, неделя 9: 3 круга по 35 с', [aquaPlan('p3').rounds, aquaPlan('p3').sec], [3, 35]);
+eq('аквааэробика: ~12–20 мин', [aquaPlan('p1').minutes >= 10, aquaPlan('p3').minutes <= 22], [true, true]);
+eq('шаги из Здоровья: история S/K по дням', parseHealth('S;2026-10-23;8123\nK;2026-10-23;5,4\nS;2026-10-24;6000'), { '2026-10-23': { source: 'health', steps: 8123, km: 5.4 }, '2026-10-24': { source: 'health', steps: 6000 } });
+eq('шаги из Здоровья: старый формат', parseHealth('TR;2026-10-25;9000;6,1')['2026-10-25'].km, 6.1);
 
 out.innerHTML = `<b>${fail ? `<span class="fail">Провалено: ${fail}</span>` : '<span class="ok">Все тесты прошли</span>'} · пройдено ${pass}</b>\n\n` + out.innerHTML;
 document.title = fail ? `FAIL ${fail}` : `OK ${pass}`;

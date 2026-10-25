@@ -10,7 +10,7 @@ export const PHASES = {
 };
 export const PHASE_ORDER = ['p1', 'p2', 'p3', 'deload'];
 
-export const SLOT_WEEKDAY = { A: 1, cardio: 3, B: 5 };
+export const SLOT_WEEKDAY = { A: 2, cardio: 4, B: 7 };
 export const SLOT_ORDER = ['A', 'cardio', 'B'];
 
 const WEEKDAYS = ['', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресенье'];

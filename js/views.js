@@ -4,8 +4,8 @@ import * as cy from './cycle.js';
 import * as P from './plan.js';
 import * as ST from './stats.js';
 import { esc, dec, btn, chip, icon, stars, heroArt, quoteOf, barChart, lineChart } from './ui.js';
-import { HOME_KINDS, SWAPS, TABLE_PROMPT, EX_BY_ID, STRETCHES, poolPlan } from './data.js';
-import { FOLDERS, PROGRAMS, programName, programExercises, upcomingSwaps } from './programs.js';
+import { HOME_KINDS, SWAPS, TABLE_PROMPT, EX_BY_ID, STRETCHES, poolPlan, SPA_RULES } from './data.js';
+import { FOLDERS, PROGRAMS, programName, programExercises, upcomingSwaps, aquaPlan } from './programs.js';
 import { hasRuVoice } from './sound.js';
 
 const MONTHS_GEN = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
@@ -25,7 +25,7 @@ export function weekLabel(week, phase) {
 
 export function gymTitle(slot, kind, finisher = 'pool') {
   const base = slot === 'cardio' ? 'Кардио' : programName(slot);
-  return kind === 'full' && slot !== 'pool' ? `${base} + ${P.FINISHERS[finisher].short}` : base;
+  return kind === 'full' && slot !== 'pool' ? `${base} + бассейн` : base;
 }
 
 const homeDone = (date, kind) => ST.activitiesOn(date).find((a) => (kind === 'walk' ? a.kind === 'walk' && !a.commute : kind === 'video' ? ['circuit', 'yoga', 'video'].includes(a.kind) : a.kind === kind));
@@ -36,7 +36,7 @@ function stepsGoalPerDay(phase) {
 
 // ---------- элементы дня ----------
 function tick(action, v, pressed, { disabled = false, label = 'Отметить' } = {}) {
-  return `<button class="tick" data-a="${action}" data-v="${esc(v)}" aria-pressed="${pressed}" aria-label="${label}" ${disabled ? 'disabled' : ''}>${icon('check', { size: 20 })}</button>`;
+  return `<button class="tick" data-a="${action}" data-v="${esc(v)}" aria-pressed="${pressed}" aria-label="${label}" ${disabled ? 'disabled' : ''}>${icon(pressed ? 'check' : 'plus', { size: 20 })}</button>`;
 }
 
 export function dayItemsHtml(date) {
@@ -66,7 +66,7 @@ export function dayItemsHtml(date) {
       <div class="di-body"><div class="di-title">${esc(gymTitle(slot, d.gymKind, d.finisher))}</div><div class="di-meta">${esc(meta)}</div>
       ${PROGRAMS[slot] ? `<button class="btn-link mini-link" data-a="prog-open" data-v="${slot}">Смотреть программу</button>` : ''}</div>${act}</div>`);
     const commute = ST.activitiesOn(date).filter((a) => a.commute);
-    if (commute.length) rows.push(`<div class="day-item is-done"><div class="di-icon">${icon('walk')}</div><div class="di-body"><div class="di-title">Пешком до клуба</div><div class="di-meta">${dec(commute.reduce((t, a) => t + (a.distanceKm || 0), 0))} км</div></div></div>`);
+    if (commute.length) rows.push(`<div class="day-item is-done"><div class="di-icon">${icon('walk')}</div><div class="di-body"><div class="di-title">Пешком до клуба</div><div class="di-meta">${dec(commute.reduce((t, a) => t + (a.distanceKm || 0), 0))} км</div></div>${canEdit ? `<button class="icon-btn" data-a="commute-del" data-v="${date}" aria-label="Убрать дорогу до клуба">${icon('x', { size: 18 })}</button>` : ''}</div>`);
   } else {
     for (const it of P.HOME_ITEMS) {
       const done = homeDone(date, it.kind);
@@ -77,7 +77,8 @@ export function dayItemsHtml(date) {
         ? `<div class="di-choices">${it.choices.map(([k, l]) => chip(l, S.videos.some((v) => v.kind === k) ? 'video-pick' : 'h-toggle', `${date}|${k}`, false).replace('class="chip"', 'class="chip mini"')).join('')}</div>` : '';
       const cls = done ? 'is-done' : past ? 'is-past' : '';
       const act = it.choices && !done ? '' : tick('h-toggle', `${date}|${it.kind === 'video' ? (done ? done.kind : 'circuit') : it.kind}`, !!done, { disabled: future || !canEdit, label: it.name });
-      rows.push(`<div class="day-item ${cls}"><div class="di-icon">${icon(it.icon)}</div><div class="di-body"><div class="di-title">${esc(it.name)}</div><div class="di-meta">${esc(meta)}</div>${choices}</div>${act}</div>`);
+      const rowAct = !future && canEdit && act ? `data-a="h-toggle" data-v="${esc(`${date}|${it.kind === 'video' ? (done ? done.kind : 'circuit') : it.kind}`)}" role="button" tabindex="0"` : '';
+      rows.push(`<div class="day-item ${cls} ${rowAct ? 'is-tappable' : ''}" ${rowAct}><div class="di-icon">${icon(it.icon)}</div><div class="di-body"><div class="di-title">${esc(it.name)}</div><div class="di-meta">${esc(meta)}</div>${choices}</div>${act}</div>`);
     }
   }
 
@@ -175,7 +176,7 @@ export function renderHome() {
   const parts = [];
   parts.push(`<header class="app-header"><div class="titles"><div class="date">${esc(cy.capitalize(cy.fmtDate(t, true)))}</div><div class="clock"><span data-clock>${clockText()}</span> · ${esc(weekLabel(week, phase))}</div></div>
     <button class="icon-btn" data-a="go" data-v="settings" aria-label="Настройки">${icon('gear')}</button></header>`);
-  parts.push(`<section class="hero">${heroArt(d.type === 'gym' && !d.cancelled ? 'water' : 'park')}<div class="hero-text"><p class="hero-quote">${esc(quoteOf(t))}</p><p class="hero-sub">${d.cancelled ? 'Сегодня отдыхаем и восстанавливаемся' : d.type === 'gym' ? 'Сегодня день клуба' : 'Сегодня — движение на свежем воздухе'}</p></div></section>`);
+  parts.push(`<section class="hero">${heroArt(d.type === 'gym' && !d.cancelled ? 'water' : 'park')}<div class="hero-text"><p class="hero-quote">${esc(S.settings.name ? `${S.settings.name}, ${quoteOf(t).charAt(0).toLowerCase()}${quoteOf(t).slice(1)}` : quoteOf(t))}</p><p class="hero-sub">${d.cancelled ? 'Сегодня отдыхаем и восстанавливаемся' : d.type === 'gym' ? 'Сегодня день клуба' : 'Сегодня — движение на свежем воздухе'}</p></div></section>`);
 
   if (S.run) parts.push(`<section class="banner"><p><b>Тренировка не закончена.</b> Начата в ${new Date(S.run.checkInAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}.</p>${btn('Продолжить', 'resume', { cls: 'btn-primary btn-small' })}</section>`);
   const cp = cy.checkpointNear(t, start);
@@ -368,7 +369,7 @@ export function renderSettings() {
     <section class="card"><h2>Цикл и цель</h2>
       <label class="field">Старт цикла (понедельник недели 1)<input type="date" data-f="startDate" value="${esc(s.startDate)}"></label>
       <label class="field">Цель, минус кг<input type="text" inputmode="decimal" data-f="goalLossKg" value="${esc(dec(s.goalLossKg))}"></label>
-      <label class="field">Пешком до клуба, км в одну сторону<input type="text" inputmode="decimal" data-f="commuteKm" value="${esc(dec(s.commuteKm))}"></label></section>
+      <label class="field">Как к тебе обращаться<input type="text" data-f="name" value="${esc(s.name || '')}" placeholder="Елена"></label></section>
     <section class="card"><h2>Звук и голос</h2>
       <div class="chips">${chip('Голос включён', 'voice', 'on', s.voice)}${chip('Без голоса', 'voice', 'off', !s.voice)}</div>
       ${btn('Проверить звук и голос', 'test-sound')}
@@ -376,15 +377,16 @@ export function renderSettings() {
     <section class="card"><h2>Мои видео</h2><p>Ссылки на видео-тренировки и йогу из Telegram и YouTube, с проверкой на опасные упражнения. ${S.videos.length ? `Сейчас: ${S.videos.length}.` : ''}</p>${btn('Открыть библиотеку', 'go', { v: 'videos' })}</section>
     <section class="card"><h2>Шаги из Apple Здоровья</h2>
       <p>Веб-приложение не может читать Здоровье напрямую, поэтому шаги передаёт «Команда» iPhone через буфер обмена.</p>
-      <details class="classes"><summary>Как сделать Команду (5 минут, один раз)</summary><ol class="list">
+      <p>Здоровье хранит всю историю шагов, поэтому Команда может забрать сразу прошедшие дни — например, последние 30. Повторные загрузки просто обновят цифры.</p>
+      <details class="classes"><summary>Как сделать Команду (10 минут, один раз)</summary><ol class="list">
         <li>Открой «Команды» → «+» → назови «Тренировки: шаги».</li>
-        <li>Действие «Найти образцы здоровья»: тип «Шаги», «Дата начала» — «Сегодня». Затем «Вычислить статистику» → «Сумма».</li>
-        <li>Ещё раз «Найти образцы здоровья»: «Расстояние ходьбы и бега», «Сегодня» → «Вычислить статистику» → «Сумма».</li>
-        <li>Действие «Текст»: <code>TR;</code> + «Текущая дата» в формате <code>yyyy-MM-dd</code> + <code>;</code> + сумма шагов + <code>;</code> + сумма расстояния.</li>
-        <li>Действие «Скопировать в буфер обмена».</li>
+        <li>«Найти образцы здоровья»: тип «Шаги», «Дата начала» — «за последние 30 дней», «Группировать по» — «День».</li>
+        <li>«Повторить с каждым»: внутри — «Текст»: <code>S;</code> + «Дата начала» повторяемого объекта в формате <code>yyyy-MM-dd</code> + <code>;</code> + «Значение».</li>
+        <li>Ещё раз «Найти образцы здоровья»: «Расстояние ходьбы и бега», последние 30 дней, по дням → «Повторить с каждым» → «Текст»: <code>K;</code> + дата + <code>;</code> + значение.</li>
+        <li>После обоих циклов: «Объединить текст» (разделитель — новая строка) → «Скопировать в буфер обмена».</li>
         <li>По желанию: «Автоматизация» → «Время суток» 21:30 → эта Команда.</li>
-        <li>Потом в приложении: «Цели» → «Шаги из Здоровья». Можно вставить сразу несколько строк — по одной на день.</li></ol>
-        <p class="note">Названия действий могут немного отличаться в разных версиях iOS.</p></details>
+        <li>Потом в приложении: «Цели» → «Шаги из Здоровья».</li></ol>
+        <p class="note">Названия действий могут немного отличаться в разных версиях iOS. Подходит и старый формат одной строкой: <code>TR;2026-10-25;8123;5,4</code>. Шаги из Здоровья важнее ручной оценки, но если поправишь километры вручную — останется твоя цифра.</p></details>
       ${btn('Вставить шаги из буфера', 'health-paste')}</section>
     <section class="card"><h2>Копия данных</h2><p>Всё хранится только на этом телефоне. ${s.lastBackupAt ? `Последняя копия: ${cy.fmtDate(s.lastBackupAt.slice(0, 10))}.` : 'Копий ещё не было.'}</p>
       ${btn('Сохранить копию', 'export', { cls: 'btn-primary' })}
@@ -404,10 +406,6 @@ export function renderDaySheet(date) {
     parts.push(`<div class="seg" role="group"><button data-a="day-type" data-v="${date}|gym" aria-pressed="${d.type === 'gym'}">День клуба</button><button data-a="day-type" data-v="${date}|home" aria-pressed="${d.type === 'home'}">Дома</button></div>`);
     if (d.type === 'gym') {
       parts.push(`<div class="chips">${Object.entries(P.GYM_KINDS).map(([k, v]) => chip(v.name, 'gym-kind', `${date}|${k}`, d.gymKind === k)).join('')}</div>`);
-      if (d.gymKind === 'full') {
-        parts.push(`<fieldset><legend>Финиш после зала</legend><div class="chips">${Object.entries(P.FINISHERS).map(([k, f]) => chip(f.name, 'day-finish', `${date}|${k}`, d.finisher === k)).join('')}</div>
-          <p class="note">${esc(P.FINISHERS[d.finisher].hint)}${d.finisher === 'class' && !d.classId ? '. Выбери занятие ниже в «Групповых занятиях».' : ''}</p></fieldset>`);
-      }
       if (d.gymKind !== 'pool') {
         const cur = P.slotFor(date, S.plan, S.settings.startDate);
         parts.push(`<fieldset><legend>Программа</legend><div class="chips">${chip('По плану', 'day-prog', `${date}|`, !d.program)}${FOLDERS.flatMap((f) => f.programs).map((id) => chip(PROGRAMS[id].name, 'day-prog', `${date}|${id}`, d.program === id)).join('')}</div>
@@ -511,24 +509,25 @@ export function renderProgram(id) {
   const p3Date = cy.addDays(S.settings.startDate, 56);
   const pool = poolPlan(cp.phase, id === 'cardio' ? 'cardio' : 'A');
   const step = (n, title, body) => `<div class="day-item"><div class="di-icon step-num">${n}</div><div class="di-body"><div class="di-title">${title}</div>${body ? `<div class="di-meta">${body}</div>` : ''}</div></div>`;
+  const aqua = aquaPlan(cp.phase);
+  const poolBody = `Плавание: ${esc(pool.text)}. Затем аквааэробика: ${esc(aqua.text)} — <button class="btn-link mini-link" data-a="prog-open" data-v="pool">упражнения</button>`;
+  const spaBody = esc(SPA_RULES.slice(0, 3).join(' '));
   let n = 1;
-  const steps = [step(n++, 'Разминка', `${id === 'cardio' ? 5 : 10} мин эллипс или велотренажёр, спокойно`)];
+  const steps = p.kind === 'pool' ? [step(n++, 'Плавание', esc(pool.text))] : [step(n++, 'Разминка', `${id === 'cardio' ? 5 : 10} мин эллипс или велотренажёр, спокойно`)];
   if (p.kind === 'cardio') steps.push(step(n++, `Кардио ${ph.cardioMin} мин`, 'Зона 2: можно говорить короткими фразами. Эллипс, велотренажёр или дорожка с наклоном 5–8%.'));
-  const exRows = exs.map((e) => `<button class="day-item ex-row" data-a="ex-open" data-v="${e.id}"><div class="di-icon">${S.photos[e.id] ? `<img src="${S.photos[e.id]}" alt="">` : icon('dumbbell')}</div>
-    <div class="di-body"><div class="di-title">${esc(e.name)}</div><div class="di-meta">${esc(doseFor(e, ctx))}${e.muscles ? ` · ${esc(e.muscles)}` : ''}</div></div>${icon('chevR', { size: 18 })}</button>`).join('');
-  const finishOpts = Object.entries(P.FINISHERS).filter(([k]) => !(id === 'cardio' && k === 'cardio'))
-    .map(([k, f]) => `<li><b>${esc(f.name)}</b> — ${esc(k === 'pool' ? pool.text : f.hint)}</li>`).join('');
-  const after = [
-    step(n + (exs.length ? 1 : 0), 'Финиш — на выбор', `По умолчанию бассейн. Равноценные замены:<ul class="list finish-list">${finishOpts}</ul>`),
-    step(n + (exs.length ? 2 : 1), 'Растяжка', esc(STRETCHES.map((s) => s.name).join(', '))),
-  ];
+  const exRows = exs.map((e) => `<button class="day-item ex-row" data-a="ex-open" data-v="${e.id}"><div class="di-icon">${S.photos[e.id] ? `<img src="${S.photos[e.id]}" alt="">` : icon(e.loadType === 'water' ? 'swim' : 'dumbbell')}</div>
+    <div class="di-body"><div class="di-title">${esc(e.name)}</div><div class="di-meta">${esc(e.loadType === 'water' ? `${aquaPlan(cp.phase).rounds} × ${aquaPlan(cp.phase).sec} с` : doseFor(e, ctx))}${e.muscles ? ` · ${esc(e.muscles)}` : ''}</div></div>${icon('chevR', { size: 18 })}</button>`).join('');
+  const k = n + (exs.length ? 1 : 0);
+  const after = p.kind === 'pool'
+    ? [step(k, 'Гидромассаж и сауна', spaBody), step(k + 1, 'Растяжка', esc(STRETCHES.map((s) => s.name).join(', ')))]
+    : [step(k, 'Бассейн', poolBody), step(k + 1, 'Гидромассаж и сауна', spaBody), step(k + 2, 'Растяжка', esc(STRETCHES.map((s) => s.name).join(', ')))];
   return `<header class="page-title"><button class="icon-btn" data-a="go" data-v="back" aria-label="Назад">${icon('back')}</button><h1>${esc(p.name)}</h1></header>
     <section class="card"><p class="sub">${esc(folder ? folder.name : '')} · ${esc(p.duration)}</p><p>${esc(p.why)}</p>
       ${p.kind === 'gym' ? `<p><b>Сейчас (${esc(weekLabel(cp.week, cp.phase).toLowerCase())}):</b> ${Math.max(2, cy.setsFor(cp.week, cp.phase) - (p.light ? 1 : 0))} подхода, отдых ${ph.rest} с, темп 2 с вверх и 2–3 с вниз, выдох на усилии.${p.light ? ' Вес на шаг ниже обычного.' : ''}</p>` : ''}
       ${isToday && !doneToday ? btn(`${icon('play', { size: 18 })} Начать сегодня`, 'gym-start', { v: t, cls: 'btn-primary btn-xl' }) : btn('Поставить на сегодня', 'prog-today', { v: id, cls: 'btn-secondary' })}</section>
     <h2 class="section-title">Порядок тренировки</h2>
     <div class="day-list">${steps.join('')}
-      ${exs.length ? `<div class="day-item"><div class="di-icon step-num">${n}</div><div class="di-body"><div class="di-title">Упражнения · ${exs.length}</div><div class="di-meta">Тапни упражнение — техника, тренажёр, фото</div></div></div>${exRows}` : ''}
+      ${exs.length ? `<div class="day-item"><div class="di-icon step-num">${n}</div><div class="di-body"><div class="di-title">${p.kind === 'pool' ? `Аквааэробика · ${esc(aqua.text)}` : `Упражнения · ${exs.length}`}</div><div class="di-meta">${p.kind === 'pool' ? 'Круговая: таймер с голосом ведёт по упражнениям. Тапни — техника' : 'Тапни упражнение — техника, тренажёр, фото'}</div></div></div>${exRows}` : ''}
       ${after.join('')}</div>
     ${later.length ? `<p class="note">С 5-й недели добавятся: ${later.map((e) => esc(e.name)).join(', ')}.</p>` : ''}
     ${swaps.length ? `<section class="card"><h2>С ${esc(cy.fmtDate(p3Date))} (неделя 9) — усложнение</h2><p class="sub">В фазе «Закрепление» три упражнения меняются на варианты посложнее. Стартовый вес приложение посчитает от твоего веса в исходном упражнении.</p>
@@ -543,7 +542,7 @@ export function renderExerciseCard(id) {
   const q = encodeURIComponent(e.nameEn + (e.loadType === 'machine' || e.loadType === 'cable' ? ' machine' : ' exercise'));
   return `<div class="sheet-head"><h2>${esc(e.name)}</h2><button class="icon-btn" data-a="close" aria-label="Закрыть">${icon('x')}</button></div>
     ${photo ? `<img class="ex-photo" src="${photo}" alt="Фото тренажёра">` : ''}
-    <p class="sub">${esc(doseFor(e))}${e.muscles ? ` · ${esc(e.muscles)}` : ''}</p>
+    <p class="sub">${esc(e.loadType === 'water' ? `${aquaPlan(currentPhase().phase).rounds} круга × ${aquaPlan(currentPhase().phase).sec} с` : doseFor(e))}${e.muscles ? ` · ${esc(e.muscles)}` : ''}</p>
     ${e.eyeNote ? `<p class="eye-note">${esc(e.eyeNote)}</p>` : ''}
     ${e.why ? `<p><b>Зачем:</b> ${esc(e.why)}${e.progressFrom ? ` Усложнённый вариант упражнения «${esc(EX_BY_ID[e.progressFrom].name)}».` : ''}</p>` : ''}
     ${e.machine ? `<h3>Как выглядит</h3><p>${esc(e.machine)}</p>` : ''}

@@ -180,7 +180,8 @@ p { margin: .35em 0; }
   display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
 }
 .tick[aria-pressed="true"] { background: var(--sage); border-color: var(--sage); }
-.tick[aria-pressed="false"] .ic { opacity: 0; }
+.tick[aria-pressed="false"] { color: var(--sage); }
+.day-item.is-tappable { cursor: pointer; }
 .tick:disabled { opacity: .35; cursor: default; }
 .mini { min-height: 34px; padding: 4px 12px; border-radius: 17px; font-size: .85rem; }
 .badge { display: inline-block; font-size: .72rem; font-weight: 650; padding: 1px 7px; border-radius: 8px; vertical-align: 1px; margin-left: 4px; }
