@@ -90,6 +90,7 @@ const stepFor = (ex) => exSet(ex).weightStep || ex.weightStep;
 const loadTypeFor = (ex) => exSet(ex).loadTypeOverride || ex.loadType;
 const modeFor = (ex) => (ex.progression === 'repsOnly' && loadTypeFor(ex) === 'dumbbell' ? 'double' : ex.progression);
 const hasFinish = (r) => r.gymKind !== 'gym';
+const programIsLight = (r) => !!(PROGRAMS[r.slot] && PROGRAMS[r.slot].light);
 const afterMain = (r) => (hasFinish(r) ? 'pool' : 'stretch');
 
 function setsTarget(r = S.run) {
@@ -689,10 +690,11 @@ const A = {
   'act-back': () => { const o = S.overlay; S.overlay = o.back ? { type: 'day', date: o.back } : null; render(); },
   'gym-start': (v) => {
     const d = P.effective(v, S.plan);
-    const slot = P.slotFor(v, S.plan, S.settings.startDate) || 'A';
+    const slot = P.slotFor(v, S.plan, S.settings.startDate, { sessions: S.sessions }) || 'A';
     A.checkin(slot, d.gymKind, d.finisher);
   },
   checkin: (slot, gymKind = 'full', finisher = 'pool') => {
+    if (S.run) { A.resume(); return; }
     let warn = '';
     if (isStrength(slot)) {
       const last = S.sessions.filter((s) => isStrength(s.slot) && !s.retro).sort((a, b) => b.checkInAt.localeCompare(a.checkInAt))[0];
@@ -706,7 +708,7 @@ const A = {
   'gym-retro': async (v) => {
     const sess = S.sessions.find((s) => s.date === v && s.retro);
     if (sess) { await db.del('sessions', sess.id); S.sessions = S.sessions.filter((s) => s !== sess); return refresh(); }
-    const slot = P.slotFor(v, S.plan, S.settings.startDate) || 'A';
+    const slot = P.slotFor(v, S.plan, S.settings.startDate, { sessions: S.sessions }) || 'A';
     const week = cy.weekOf(v, S.settings.startDate);
     const rec = { id: uid(), cycleId: 'c1', slot, day: slot, date: v, plannedDate: v, week, phase: cy.trainingPhase(week), status: 'done', retro: true, checkInAt: `${v}T12:00:00`, sets: [], gymKind: P.effective(v, S.plan).gymKind, finisher: P.effective(v, S.plan).finisher };
     await db.put('sessions', rec); S.sessions.push(rec); refresh();
@@ -847,11 +849,11 @@ const A = {
   'wb-next': async () => {
     const w = S.run.wellbeing;
     if (w.pressure === 'yes') { await logSymptoms(['headPressure'], false, 'перед тренировкой'); S.overlay = { type: 'pressure' }; }
-    else if (w.sleep === 'bad' || w.energy === 'low') S.overlay = { type: 'light' };
+    else if ((w.sleep === 'bad' || w.energy === 'low') && !programIsLight(S.run)) S.overlay = { type: 'light' };
     else S.run.stage = S.run.slot === 'pool' ? 'pool' : 'warmup';
     await saveRun(); render();
   },
-  light: async (v) => { S.run.lightDay = v === 'yes'; S.run.stage = S.run.slot === 'pool' ? 'pool' : 'warmup'; S.overlay = null; S.ui = {}; await saveRun(); render(); },
+  light: async (v) => { S.run.lightDay = v === 'yes' || programIsLight(S.run); S.run.stage = S.run.slot === 'pool' ? 'pool' : 'warmup'; S.overlay = null; S.ui = {}; await saveRun(); render(); },
   'abort-start': async () => { const r = S.run; r.aborted = true; r.status = 'skip'; r.finishedAt = nowISO(); r.note = 'Не начата: давление в глазах или голове'; S.overlay = null; await finalizeRun(); snd.keepAwake(false); go('home'); },
 
   'warmup-start': async () => { startTimer('timer', 'warmup', [{ label: 'Разминка', sec: (S.run.slot === 'cardio' ? 5 : 10) * 60, half: true }], { endSay: 'Разминка окончена' }); await saveRun(); render(); },

@@ -71,17 +71,54 @@ export const weekDates = (ws) => Array.from({ length: 7 }, (_, i) => cy.addDays(
 const SLOT_SEQ = ['A', 'cardio', 'B', 'cardio', 'A', 'cardio', 'B'];
 const SLOT_SEQ_2 = ['A', 'B'];
 
-// Какая программа выпадает на день зала: по порядку дней зала в неделе
-export function slotFor(date, plan, startDate) {
+const BASE_SLOTS = ['A', 'cardio', 'B'];
+const STRENGTH = ['A', 'B'];
+const isBase = (s) => BASE_SLOTS.includes(s);
+
+/**
+ * Какая программа выпадает на день клуба.
+ * Очередь недели А → кардио → Б раздаётся по сделанному, а не по позиции дня:
+ * сделанная тренировка забирает свою программу, пропущенный прошедший день ничего не забирает,
+ * оставшиеся программы по порядку достаются сегодняшнему и будущим дням клуба.
+ * ctx: { today, sessions } — sessions с полями date, slot, status.
+ */
+export function slotFor(date, plan, startDate, ctx = {}) {
   const day = effective(date, plan);
   if (day.type !== 'gym' || day.cancelled) return null;
   if (day.gymKind === 'pool') return 'pool';
   if (day.program) return day.program;
+  const today = ctx.today || cy.today();
+  const ws = cy.weekStart(date);
+  const dates = weekDates(ws);
+  const done = (ctx.sessions || []).filter((s) => s.date >= ws && s.date <= dates[6] && (s.status === 'done' || s.status === 'partial'));
+  const doneOn = (d) => done.find((s) => s.date === d);
+  const own = doneOn(date);
+  if (own) return own.slot;
+
+  const gyms = dates.map((d) => effective(d, plan)).filter((d) => d.type === 'gym' && !d.cancelled && d.gymKind !== 'pool' && !d.program);
   const week = cy.weekOf(date, startDate);
-  if (week === 0) return 'A';
-  const gyms = weekDates(cy.weekStart(date)).map((d) => effective(d, plan)).filter((d) => d.type === 'gym' && !d.cancelled && d.gymKind !== 'pool');
-  const i = gyms.findIndex((d) => d.date === date);
-  return (gyms.length === 2 ? SLOT_SEQ_2 : SLOT_SEQ)[i] || 'cardio';
+  let queue;
+  if (week === 0) queue = ['A', ...Array(7).fill('cardio')];
+  else if (gyms.length === 2) queue = [...SLOT_SEQ_2];
+  else queue = [...SLOT_SEQ];
+
+  // сделанное за неделю убирает свою программу из очереди; микс заменяет ближайшую силовую
+  for (const s of done) {
+    const i = isBase(s.slot) ? queue.indexOf(s.slot) : s.slot === 'pool' ? -1 : queue.findIndex((q) => STRENGTH.includes(q));
+    if (i >= 0) queue.splice(i, 1);
+  }
+  // дни программ-миксов, поставленных вручную, тоже забирают силовую
+  for (const d of dates.map((x) => effective(x, plan))) {
+    if (d.type === 'gym' && !d.cancelled && d.program && !isBase(d.program) && d.program !== 'pool' && !doneOn(d.date)) {
+      const i = queue.findIndex((q) => STRENGTH.includes(q));
+      if (i >= 0) queue.splice(i, 1);
+    }
+  }
+  // раздаём оставшееся сегодняшнему и будущим дням без сделанной тренировки
+  const open = gyms.filter((d) => d.date >= today && !doneOn(d.date));
+  const i = open.findIndex((d) => d.date === date);
+  if (i < 0) return queue[0] || 'cardio'; // прошедший пропущенный день: что предлагалось бы первым
+  return queue[i] || 'cardio';
 }
 
 export function swapDays(a, b, plan) {
