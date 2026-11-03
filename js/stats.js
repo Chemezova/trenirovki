@@ -52,8 +52,15 @@ export function dayMinutes(date) {
   return Math.round(m);
 }
 export const homeMinutesOn = (date) => activitiesOn(date).filter((a) => HOME_KINDS.includes(a.kind)).reduce((t, a) => t + (a.minutes || 0), 0);
+// Минуты бассейна в одной тренировке: плавание + аквааэробика; день клуба, отмеченный задним числом, — 45 мин
+export function sessionPoolMin(s) {
+  const swim = s.pool && s.pool.result !== 'none' ? s.pool.minutes || 25 : s.retro && s.gymKind !== 'gym' ? 45 : 0;
+  return swim + (s.aqua ? s.aqua.minutes || 0 : 0);
+}
+// Бассейн за день: из тренировок плюс отдельные отметки «Бассейн»
 export function swimMinutesOn(date) {
-  return sessionsOn(date).reduce((t, s) => t + (s.pool && s.pool.result !== 'none' ? s.pool.minutes || 25 : 0) + (s.aqua ? s.aqua.minutes || 0 : 0), 0);
+  return sessionsOn(date).reduce((t, s) => t + sessionPoolMin(s), 0)
+    + activitiesOn(date).filter((a) => a.kind === 'pool').reduce((t, a) => t + (a.minutes || 30), 0);
 }
 export const gymOn = (date) => sessionsOn(date).some((s) => s.slot && s.slot !== 'pool');
 
@@ -74,7 +81,7 @@ export function sumRange(fn, from, to) {
 
 export function clubVisitDates() {
   const set = new Set(S.sessions.filter((s) => s.status === 'done' || s.status === 'partial').map((s) => s.date));
-  for (const a of S.activities) if (a.kind === 'class') set.add(a.date);
+  for (const a of S.activities) if (a.kind === 'class' || a.kind === 'pool') set.add(a.date);
   return [...set].sort();
 }
 
@@ -109,11 +116,11 @@ export const TYPE_ROWS = [
 ];
 
 export function typeBreakdown(from, to) {
-  const r = Object.fromEntries(TYPE_ROWS.map(([id]) => [id, { count: 0, minutes: 0, km: 0 }]));
+  const r = Object.fromEntries(TYPE_ROWS.map(([id]) => [id, { count: 0, minutes: 0, km: 0, steps: 0 }]));
   const add = (id, minutes, km = 0) => { r[id].count += 1; r[id].minutes += Math.round(minutes || 0); r[id].km += km; };
   for (const s of S.sessions) {
     if (s.date < from || s.date > to || !(s.status === 'done' || s.status === 'partial')) continue;
-    const pool = (s.pool && s.pool.result !== 'none' ? s.pool.minutes || 25 : s.retro && s.gymKind !== 'gym' ? 45 : 0) + (s.aqua ? s.aqua.minutes || 0 : 0);
+    const pool = sessionPoolMin(s);
     const cardio = (s.cardio ? s.cardio.minutes || 0 : 0) + (s.finisherCardio ? s.finisherCardio.minutes || 0 : 0);
     if (pool) add('pool', pool);
     if (s.finisherCardio) add('cardio', s.finisherCardio.minutes);
@@ -123,6 +130,7 @@ export function typeBreakdown(from, to) {
   for (const a of S.activities) {
     if (a.date < from || a.date > to) continue;
     if (a.kind === 'walk') {
+      r.walk.steps += walkSteps(a);
       if (a.commute) { r.walk.km += a.distanceKm || 0; r.walk.minutes += Math.round((a.distanceKm || 0) * 13); r.walk.commutes = (r.walk.commutes || 0) + 1; }
       else add('walk', a.minutes || (a.distanceKm || 0) * 13, walkKm(a));
     } else if (a.kind === 'video') add('circuit', a.minutes);

@@ -95,9 +95,15 @@ export function dayItemsHtml(date) {
     }
   }
 
-  // когда в бассейне нет групповых занятий — можно плавать самой
-  if (!past && !d.cancelled && !(d.type === 'gym' && d.gymKind === 'gym')) {
-    rows.push(`<div class="day-item is-suggest"><div class="di-icon">${icon('swim')}</div><div class="di-body"><div class="di-title">Бассейн свободен</div><div class="di-meta">${esc(P.poolFreeText(date))} — без групповых занятий</div></div></div>`);
+  // бассейн: отметка о посещении, а пока не был — свободные от групповых занятий окна
+  const poolAct = ST.activitiesOn(date).find((a) => a.kind === 'pool');
+  const poolInSession = poolAct ? 0 : ST.sessionsOn(date).reduce((t, x) => t + ST.sessionPoolMin(x), 0);
+  if (!d.cancelled && (!past || canEdit || poolAct || poolInSession)) {
+    const poolDone = !!poolAct || poolInSession > 0;
+    const poolMeta = poolAct ? `${poolAct.minutes || 30} мин` : poolInSession ? `${poolInSession} мин · из тренировки` : past ? 'не отмечено' : `Свободно: ${P.poolFreeText(date)}`;
+    const pv = esc(`${date}|pool`);
+    const tappable = !poolInSession && !future && canEdit;
+    rows.push(`<div class="day-item ${poolDone ? 'is-done' : past ? 'is-past' : 'is-suggest'} ${tappable ? 'is-tappable' : ''}" ${tappable ? `data-a="h-toggle" data-v="${pv}" role="button" tabindex="0"` : ''}><div class="di-icon">${icon('swim')}</div><div class="di-body"><div class="di-title">Бассейн</div><div class="di-meta">${esc(poolMeta)}</div></div>${poolInSession ? '' : tick('h-toggle', `${date}|pool`, !!poolAct, { disabled: future || !canEdit, label: 'Бассейн' })}</div>`);
   }
 
   // групповые занятия клуба — серым, можно выбрать одно; за прошедшее время — отметить, что была
@@ -228,7 +234,7 @@ function planDayRow(date) {
   const title = d.cancelled ? 'Отменено' : d.type === 'gym' ? gymTitle(slot, d.gymKind, d.finisher) : 'Дома: прогулка, видео или йога, Ring Fit';
   const done = dayDone(date);
   const missed = date < cy.today() && !done && !d.cancelled;
-  const meta = missed ? 'не отмечено' : [d.cancelled ? '' : P.plannedHours(date, S.plan), c ? `${c.time} ${c.name}` : '', done ? '✓ сделано' : ''].filter(Boolean).join(' · ');
+  const meta = missed ? 'не отмечено' : [d.cancelled ? '' : P.plannedHours(date, S.plan), c ? `${c.time} ${c.name}` : '', ST.swimMinutesOn(date) ? `бассейн ${ST.swimMinutesOn(date)} мин` : '', done ? '✓ сделано' : ''].filter(Boolean).join(' · ');
   return `<button class="plan-day ${d.type === 'gym' && !d.cancelled ? 'is-gym' : ''} ${date === cy.today() ? 'is-today' : ''} ${missed ? 'is-missed' : ''}" data-a="day" data-v="${date}">
     <div class="pd-date"><b>${dayNum(date)}</b><span>${WD[cy.weekday(date)]}</span></div>
     <div class="pd-body"><div class="di-title">${esc(title)}</div><div class="di-meta">${esc(meta)}</div></div>${icon(d.type === 'gym' && !d.cancelled ? 'dumbbell' : 'walk', { size: 20 })}</button>`;
@@ -245,7 +251,7 @@ function typesCard(title, from, to) {
   const total = shown.reduce((t, x) => t + x.minutes, 0);
   return `<section class="card"><h2>${esc(title)}</h2>
     <div class="types">${shown.map((x) => {
-      const extra = x.id === 'walk' ? ` · ${dec(x.km)} км · ${ST.kmToSteps(x.km).toLocaleString('ru-RU')} шагов${x.commutes ? `, из них до клуба ${x.commutes}×` : ''}` : '';
+      const extra = x.id === 'walk' ? ` · ${dec(x.km)} км · ${x.steps.toLocaleString('ru-RU')} шагов${x.commutes ? `, из них до клуба ${x.commutes}×` : ''}` : '';
       return `<div class="type-row" title="${esc(`${x.name}: ${timesWord(x.count)}, ${hm(x.minutes)}${extra}`)}">
         <div class="type-head"><span class="type-name">${icon(x.icon, { size: 18 })}${esc(x.name)}</span><span class="type-val"><b>${x.count ? timesWord(x.count) : '—'}</b> · ${hm(x.minutes)}</span></div>
         <div class="type-bar"><i style="width:${((x.minutes / max) * 100).toFixed(1)}%"></i></div>

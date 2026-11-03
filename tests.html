@@ -9,7 +9,8 @@
 import * as cy from './js/cycle.js';
 import { suggest } from './js/progression.js';
 import { programExercises, upcomingSwaps, aquaPlan } from './js/programs.js';
-import { parseHealth, stepsToKm, kmToSteps, walkSteps } from './js/stats.js';
+import { parseHealth, stepsToKm, kmToSteps, walkSteps, sessionPoolMin, swimMinutesOn, clubVisitDates } from './js/stats.js';
+import { S } from './js/state.js';
 
 const out = document.getElementById('out');
 let pass = 0, fail = 0;
@@ -125,6 +126,20 @@ eq('бассейн пт', poolFreeText('2026-11-06'), '12:00–14:00');
 eq('бассейн сб', poolFreeText('2026-11-07'), '15:00–22:00');
 eq('бассейн вс — весь день', poolFreeText('2026-11-08'), 'весь день');
 eq('бассейн: окна вт — два', poolFreeFor('2026-11-03').length, 2);
+
+// бассейн в подсчётах
+eq('бассейн: сделан по таймеру', sessionPoolMin({ pool: { result: 'done', minutes: 30 } }), 30);
+eq('бассейн: «не плавала» — 0', sessionPoolMin({ pool: { result: 'none' } }), 0);
+eq('бассейн: день клуба задним числом (зал+бассейн) — 45', sessionPoolMin({ retro: true, gymKind: 'full' }), 45);
+eq('бассейн: задним числом, только зал — 0', sessionPoolMin({ retro: true, gymKind: 'gym' }), 0);
+eq('бассейн: плавание + аквааэробика', sessionPoolMin({ pool: { result: 'done', minutes: 20 }, aqua: { minutes: 15 } }), 35);
+S.sessions = [{ date: '2026-11-01', status: 'done', retro: true, gymKind: 'full', slot: 'A' }];
+S.activities = [{ date: '2026-11-01', kind: 'pool', minutes: 40 }, { date: '2026-11-02', kind: 'pool', minutes: 30 }, { date: '2026-11-03', kind: 'class', classId: 'x' }];
+eq('бассейн за день: тренировка + отметка', swimMinutesOn('2026-11-01'), 85);
+eq('бассейн за день: только отметка', swimMinutesOn('2026-11-02'), 30);
+eq('бассейн за день: нет', swimMinutesOn('2026-11-04'), 0);
+eq('визиты в клуб: бассейн и групповое считаются', clubVisitDates(), ['2026-11-01', '2026-11-02', '2026-11-03']);
+S.sessions = []; S.activities = [];
 
 out.innerHTML = `<b>${fail ? `<span class="fail">Провалено: ${fail}</span>` : '<span class="ok">Все тесты прошли</span>'} · пройдено ${pass}</b>\n\n` + out.innerHTML;
 document.title = fail ? `FAIL ${fail}` : `OK ${pass}`;

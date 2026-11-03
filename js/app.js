@@ -552,7 +552,7 @@ function renderOverlay() {
   else if (o.type === 'cancel') inner = V.renderCancelSheet(o.date);
   else if (o.type === 'video') inner = V.renderVideoSheet(o.id);
   else if (o.type === 'act') {
-    const name = { walk: 'Прогулка', ringfit: 'Ring Fit', circuit: 'Видео-тренировка', yoga: 'Йога', video: 'Видео-тренировка', other: 'Активность' }[o.kind] || 'Активность';
+    const name = { walk: 'Прогулка', ringfit: 'Ring Fit', circuit: 'Видео-тренировка', yoga: 'Йога', video: 'Видео-тренировка', pool: 'Бассейн', other: 'Активность' }[o.kind] || 'Активность';
     inner = `<div class="sheet-head"><h2>${esc(name)} · ${esc(cy.fmtDate(o.date))}</h2><button class="icon-btn" data-a="act-back" aria-label="Закрыть">${icon('x')}</button></div>
       ${['circuit', 'yoga'].includes(o.kind) ? `<div class="chips">${chip('Видео', 'act-kind', 'circuit', o.kind === 'circuit')}${chip('Йога', 'act-kind', 'yoga', o.kind === 'yoga')}</div>` : ''}
       <div class="stepper-block"><div class="stepper-label">Минуты</div><div class="stepper"><button data-a="act-min" data-v="-5" aria-label="Меньше минут">−</button><input class="val" type="text" inputmode="numeric" data-f="act-minutes" value="${o.minutes}"><button data-a="act-min" data-v="5" aria-label="Больше минут">+</button></div></div>
@@ -566,6 +566,7 @@ function renderOverlay() {
       <p class="sub">Впиши шаги или километры — второе число посчитается само (примерно ${ST.STEPS_PER_KM} шагов в километре).</p>
       <label class="field">Шаги<input type="text" inputmode="numeric" data-f="steps-val" value="${Math.round(o.steps)}"></label>
       <label class="field">Километры<input type="text" inputmode="decimal" data-f="steps-km" value="${dec(o.km, 2)}"></label>
+      ${P.effective(o.date, S.plan).type === 'home' && !P.effective(o.date, S.plan).cancelled ? '<p class="note">На домашнем дне шаги засчитаются как прогулка.</p>' : ''}
       ${btn('Сохранить', 'steps-save', { cls: 'btn-primary btn-xl' })}${btn('Отмена', 'day', { v: o.date, cls: 'btn-link' })}`;
   }
   else if (o.type === 'videoPick') inner = V.renderVideoPick(o.date, o.kind);
@@ -676,7 +677,7 @@ const A = {
     const [d, kind] = splitV(v);
     const group = ['circuit', 'yoga', 'video'].includes(kind) ? ['circuit', 'yoga', 'video'] : [kind];
     const ex = S.activities.find((a) => a.date === d && group.includes(a.kind) && !a.commute);
-    const item = P.HOME_ITEMS.find((i) => i.kind === kind) || P.HOME_ITEMS.find((i) => i.kind === 'video');
+    const item = kind === 'pool' ? { min: 30, km: 0 } : P.HOME_ITEMS.find((i) => i.kind === kind) || P.HOME_ITEMS.find((i) => i.kind === 'video');
     S.overlay = {
       type: 'act', date: d, kind: ex ? ex.kind : kind, id: ex ? ex.id : null,
       minutes: ex ? ex.minutes ?? item.min : item.min, km: ex ? ex.distanceKm ?? item.km : item.km, steps: ex ? ex.steps : undefined,
@@ -736,8 +737,19 @@ const A = {
   'steps-save': async () => {
     const o = S.overlay;
     if (!(o.steps >= 0) || !(o.km >= 0)) { alert('Введи шаги или километры числом.'); return; }
-    S.health[o.date] = { ...(S.health[o.date] || {}), steps: Math.round(o.steps), km: +o.km.toFixed(2), source: 'manual' };
+    const steps = Math.round(o.steps), km = +o.km.toFixed(2);
+    S.health[o.date] = { ...(S.health[o.date] || {}), steps, km, source: 'manual' };
     await saveHealth();
+    // на домашнем дне шаги за день засчитываются как прогулка (если своей прогулки в этот день не отмечено)
+    const eff = P.effective(o.date, S.plan);
+    if (eff.type === 'home' && !eff.cancelled) {
+      const own = S.activities.find((a) => a.date === o.date && a.kind === 'walk' && !a.commute);
+      if (!own && km > 0) await addActivity({ kind: 'walk', date: o.date, distanceKm: km, steps, minutes: Math.round(km * 13), fromDaySteps: true });
+      else if (own && own.fromDaySteps) {
+        if (km > 0) { Object.assign(own, { distanceKm: km, steps, minutes: Math.round(km * 13) }); await db.put('activities', own); }
+        else await removeActivity(own);
+      }
+    }
     S.overlay = { type: 'day', date: o.date };
     refresh();
   },
