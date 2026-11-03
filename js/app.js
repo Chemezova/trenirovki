@@ -520,8 +520,8 @@ function renderMeasure() {
   const field = (key, label) => `<label class="field">${label}<input type="text" inputmode="decimal" data-f="m-${key}" value="${esc(f[key] ?? '')}"></label>`;
   return `${backHeader('Замер')}<section class="card"><p class="sub">Утром, натощак, после туалета.</p>
     <label class="field">Дата<input type="date" data-f="m-date" value="${esc(f.date)}"></label>
-    ${field('weightKg', 'Вес, кг')}${field('waistCm', 'Талия, см')}${field('bellyNavelCm', 'Живот по пупку, см')}${field('hipsCm', 'Бёдра, см')}${field('thighCm', 'Бедро, см')}
-    <p class="note">Фото пока снимай камерой телефона: спереди, сбоку, сзади — тот же свет, то же место, та же одежда.</p>
+    ${field('waistCm', 'Талия, см')}${field('chestCm', 'Объём груди, см')}${field('bellyNavelCm', 'Живот по пупку, см')}${field('hipsCm', 'Бёдра, см')}${field('thighCm', 'Бедро, см')}
+    <p class="note">Вес записывается отдельно — кнопкой «Вес» на экране «Цели». Фото в приложение пока не добавляются: снимай в «Камере» — спереди, сбоку, сзади, тот же свет, то же место, та же одежда.</p>
     ${btn('Сохранить замер', 'measure-save', { cls: 'btn-primary btn-xl' })}</section>`;
 }
 
@@ -534,7 +534,8 @@ function renderHomeLog() {
     <fieldset><legend>Что</legend><div class="chips">${HOME_KINDS.map((x) => chip(x.name, 'h-type', x.id, f.type === x.id)).join('')}</div></fieldset>
     ${k.safety ? `<p class="eye-note">${esc(k.safety)}</p>` : ''}
     <div class="stepper-block"><div class="stepper-label">Минуты</div><div class="stepper"><button data-a="h-min" data-v="-5" aria-label="Меньше минут">−</button><div class="val">${minutes}</div><button data-a="h-min" data-v="5" aria-label="Больше минут">+</button></div></div>
-    ${f.type === 'walk' ? `<div class="stepper-block"><div class="stepper-label">Километры</div><div class="stepper"><button data-a="h-km" data-v="-0.5" aria-label="Меньше">−</button><div class="val">${dec(f.km)}</div><button data-a="h-km" data-v="0.5" aria-label="Больше">+</button></div></div>` : `
+    ${f.type === 'walk' ? `<div class="stepper-block"><div class="stepper-label">Километры</div><div class="stepper"><button data-a="h-km" data-v="-0.5" aria-label="Меньше">−</button><div class="val" data-km-view>${dec(f.km)}</div><button data-a="h-km" data-v="0.5" aria-label="Больше">+</button></div></div>
+    <label class="field">Шаги (пересчитаются в км сами)<input type="text" inputmode="numeric" data-f="h-steps" value="${f.steps ?? ST.kmToSteps(f.km)}"></label>` : `
     <fieldset><legend>Как прошло</legend><div class="chips">${[['easy', 'Легко'], ['ok', 'Нормально'], ['hard', 'Тяжело']].map(([v, l]) => chip(l, 'h-feel', v, f.feel === v)).join('')}</div></fieldset>
     <label class="check"><input type="checkbox" data-f="h-breath" ${f.breath ? 'checked' : ''}> Хотелось задержать дыхание / напрягалось лицо</label>`}
     <label class="field">Дата<input type="date" data-f="h-date" value="${esc(f.date)}" min="${cy.addDays(cy.today(), -7)}" max="${cy.today()}"></label>
@@ -555,9 +556,17 @@ function renderOverlay() {
     inner = `<div class="sheet-head"><h2>${esc(name)} · ${esc(cy.fmtDate(o.date))}</h2><button class="icon-btn" data-a="act-back" aria-label="Закрыть">${icon('x')}</button></div>
       ${['circuit', 'yoga'].includes(o.kind) ? `<div class="chips">${chip('Видео', 'act-kind', 'circuit', o.kind === 'circuit')}${chip('Йога', 'act-kind', 'yoga', o.kind === 'yoga')}</div>` : ''}
       <div class="stepper-block"><div class="stepper-label">Минуты</div><div class="stepper"><button data-a="act-min" data-v="-5" aria-label="Меньше минут">−</button><input class="val" type="text" inputmode="numeric" data-f="act-minutes" value="${o.minutes}"><button data-a="act-min" data-v="5" aria-label="Больше минут">+</button></div></div>
-      ${o.kind === 'walk' ? `<div class="stepper-block"><div class="stepper-label">Километры</div><div class="stepper"><button data-a="act-km" data-v="-0.5" aria-label="Меньше км">−</button><input class="val" type="text" inputmode="decimal" data-f="act-kmval" value="${dec(o.km)}"><button data-a="act-km" data-v="0.5" aria-label="Больше км">+</button></div></div>` : ''}
+      ${o.kind === 'walk' ? `<div class="stepper-block"><div class="stepper-label">Километры</div><div class="stepper"><button data-a="act-km" data-v="-0.5" aria-label="Меньше км">−</button><input class="val" type="text" inputmode="decimal" data-f="act-kmval" value="${dec(o.km)}"><button data-a="act-km" data-v="0.5" aria-label="Больше км">+</button></div></div>
+        <label class="field">Шаги (пересчитаются в км сами)<input type="text" inputmode="numeric" data-f="act-steps" value="${o.steps ?? ST.kmToSteps(o.km)}"></label>` : ''}
       ${btn('Сохранить', 'act-save', { cls: 'btn-primary btn-xl' })}
       ${o.id ? btn('Убрать отметку', 'act-del', { cls: 'btn-link danger-link' }) : btn('Отмена', 'act-back', { cls: 'btn-link' })}`;
+  }
+  else if (o.type === 'steps') {
+    inner = `<div class="sheet-head"><h2>Ходьба · ${esc(cy.fmtDate(o.date))}</h2><button class="icon-btn" data-a="day" data-v="${o.date}" aria-label="Закрыть">${icon('x')}</button></div>
+      <p class="sub">Впиши шаги или километры — второе число посчитается само (примерно ${ST.STEPS_PER_KM} шагов в километре).</p>
+      <label class="field">Шаги<input type="text" inputmode="numeric" data-f="steps-val" value="${Math.round(o.steps)}"></label>
+      <label class="field">Километры<input type="text" inputmode="decimal" data-f="steps-km" value="${dec(o.km, 2)}"></label>
+      ${btn('Сохранить', 'steps-save', { cls: 'btn-primary btn-xl' })}${btn('Отмена', 'day', { v: o.date, cls: 'btn-link' })}`;
   }
   else if (o.type === 'videoPick') inner = V.renderVideoPick(o.date, o.kind);
   else if (o.type === 'weight') {
@@ -646,6 +655,15 @@ const A = {
     P.setDay(d, S.plan, { classId: cur === id ? null : id });
     await savePlan(); refresh();
   },
+  // «Была на этом занятии»: выбор занятия и отметка посещения одним нажатием, в том числе за прошедшие дни
+  'cls-went': async (v) => {
+    const [d, id] = splitV(v);
+    for (const a of S.activities.filter((x) => x.date === d && x.kind === 'class' && x.classId !== id)) await removeActivity(a);
+    P.setDay(d, S.plan, { classId: id });
+    await savePlan();
+    if (!S.activities.some((a) => a.date === d && a.kind === 'class' && a.classId === id)) await addActivity({ kind: 'class', classId: id, date: d, minutes: P.CLASS_MIN });
+    refresh();
+  },
   'cls-done': async (v) => {
     const [d, id] = splitV(v);
     const ex = S.activities.find((a) => a.date === d && a.kind === 'class' && a.classId === id);
@@ -661,16 +679,16 @@ const A = {
     const item = P.HOME_ITEMS.find((i) => i.kind === kind) || P.HOME_ITEMS.find((i) => i.kind === 'video');
     S.overlay = {
       type: 'act', date: d, kind: ex ? ex.kind : kind, id: ex ? ex.id : null,
-      minutes: ex ? ex.minutes ?? item.min : item.min, km: ex ? ex.distanceKm ?? item.km : item.km,
+      minutes: ex ? ex.minutes ?? item.min : item.min, km: ex ? ex.distanceKm ?? item.km : item.km, steps: ex ? ex.steps : undefined,
       back: S.overlay && S.overlay.type === 'day' ? S.overlay.date : null,
     };
     render();
   },
   'act-min': (v) => { S.overlay.minutes = Math.max(5, (S.overlay.minutes || 0) + Number(v)); render(); },
-  'act-km': (v) => { S.overlay.km = Math.max(0, +((S.overlay.km || 0) + Number(v)).toFixed(1)); render(); },
+  'act-km': (v) => { S.overlay.km = Math.max(0, +((S.overlay.km || 0) + Number(v)).toFixed(1)); S.overlay.steps = ST.kmToSteps(S.overlay.km); render(); },
   'act-save': async () => {
     const o = S.overlay;
-    const rec = { kind: o.kind, date: o.date, minutes: o.minutes, distanceKm: o.kind === 'walk' ? o.km : undefined };
+    const rec = { kind: o.kind, date: o.date, minutes: o.minutes, distanceKm: o.kind === 'walk' ? o.km : undefined, steps: o.kind === 'walk' ? (o.steps ?? ST.kmToSteps(o.km)) : undefined };
     if (o.id) {
       const ex = S.activities.find((a) => a.id === o.id);
       Object.assign(ex, rec);
@@ -713,14 +731,15 @@ const A = {
     const rec = { id: uid(), cycleId: 'c1', slot, day: slot, date: v, plannedDate: v, week, phase: cy.trainingPhase(week), status: 'done', retro: true, checkInAt: `${v}T12:00:00`, sets: [], gymKind: P.effective(v, S.plan).gymKind, finisher: P.effective(v, S.plan).finisher };
     await db.put('sessions', rec); S.sessions.push(rec); refresh();
   },
-  'km-edit': async (v) => {
-    const cur = dec(ST.dayKm(v));
-    const val = prompt('Сколько км прошла за день?', cur);
-    if (val == null) return;
-    const n = num(val);
-    if (n == null) return;
-    S.health[v] = { ...(S.health[v] || {}), km: n, steps: Math.round(n * ST.STEPS_PER_KM), source: 'manual' };
-    await saveHealth(); refresh();
+  // ходьба за день: шаги и км, одно пересчитывается в другое
+  'km-edit': (v) => { S.overlay = { type: 'steps', date: v, steps: ST.daySteps(v), km: +ST.dayKm(v).toFixed(2) }; render(); },
+  'steps-save': async () => {
+    const o = S.overlay;
+    if (!(o.steps >= 0) || !(o.km >= 0)) { alert('Введи шаги или километры числом.'); return; }
+    S.health[o.date] = { ...(S.health[o.date] || {}), steps: Math.round(o.steps), km: +o.km.toFixed(2), source: 'manual' };
+    await saveHealth();
+    S.overlay = { type: 'day', date: o.date };
+    refresh();
   },
   'health-paste': async () => {
     let text = '';
@@ -811,6 +830,15 @@ const A = {
   'wt-save': async () => {
     const rec = { id: uid(), cycleId: 'c1', date: cy.today(), at: nowISO(), checkpoint: null, weightKg: S.overlay.value, premenstrual: !!S.overlay.pm };
     await db.put('measurements', rec); S.measurements.push(rec); S.overlay = null; refresh();
+  },
+  // удалить запись веса; если в ней есть и замеры (старые записи), убирается только вес
+  'del-weight': async (v) => {
+    const m = S.measurements.find((x) => x.id === v);
+    if (!m || !confirm('Удалить эту запись веса?')) return;
+    const hasOther = ['waistCm', 'chestCm', 'bellyNavelCm', 'hipsCm', 'thighCm'].some((k) => m[k] != null);
+    if (hasOther) { delete m.weightKg; await db.put('measurements', m); }
+    else { await db.del('measurements', v); S.measurements = S.measurements.filter((x) => x.id !== v); }
+    refresh();
   },
   'del-measure': async (v) => { if (!confirm('Удалить запись?')) return; await db.del('measurements', v); S.measurements = S.measurements.filter((m) => m.id !== v); refresh(); },
 
@@ -1032,19 +1060,19 @@ const A = {
   'measure-save': async () => {
     const f = S.form;
     const rec = { id: uid(), cycleId: 'c1', date: f.date, at: nowISO(), checkpoint: cy.checkpointNear(f.date, S.settings.startDate), premenstrual: f.pm === 'yes' };
-    for (const k of ['weightKg', 'waistCm', 'bellyNavelCm', 'hipsCm', 'thighCm']) { const n = num(f[k]); if (n != null) rec[k] = n; }
+    for (const k of ['waistCm', 'chestCm', 'bellyNavelCm', 'hipsCm', 'thighCm']) { const n = num(f[k]); if (n != null) rec[k] = n; }
     await db.put('measurements', rec);
     S.measurements.push(rec);
     go('back');
   },
   'h-type': (v) => { S.form.type = v; S.form.minutes = null; render(); },
   'h-min': (v) => { const k = HOME_KINDS.find((x) => x.id === S.form.type); S.form.minutes = Math.max(5, (S.form.minutes ?? (S.form.type === 'walk' ? 75 : k.minutes)) + Number(v)); render(); },
-  'h-km': (v) => { S.form.km = Math.max(0.5, +(S.form.km + Number(v)).toFixed(1)); render(); },
+  'h-km': (v) => { S.form.km = Math.max(0.5, +(S.form.km + Number(v)).toFixed(1)); S.form.steps = ST.kmToSteps(S.form.km); render(); },
   'h-feel': (v) => { S.form.feel = v; render(); },
   'home-save': async () => {
     const f = S.form;
     const k = HOME_KINDS.find((x) => x.id === f.type);
-    await addActivity({ kind: f.type, date: f.date, minutes: f.minutes ?? (f.type === 'walk' ? 75 : k.minutes), distanceKm: f.type === 'walk' ? f.km : undefined, feel: f.feel || undefined, breathHold: f.breath || undefined });
+    await addActivity({ kind: f.type, date: f.date, minutes: f.minutes ?? (f.type === 'walk' ? 75 : k.minutes), distanceKm: f.type === 'walk' ? f.km : undefined, steps: f.type === 'walk' ? (f.steps ?? ST.kmToSteps(f.km)) : undefined, feel: f.feel || undefined, breathHold: f.breath || undefined });
     go('back');
   },
 
@@ -1166,7 +1194,13 @@ $app.addEventListener('input', (e) => {
   const f = e.target.dataset.f;
   if (f && f.startsWith('m-')) S.form[f.slice(2)] = e.target.value;
   if (f === 'act-minutes') { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) S.overlay.minutes = n; }
-  if (f === 'act-kmval') { const n = num(e.target.value); if (n != null) S.overlay.km = n; }
+  // шаги и км связаны: правим одно — второе в соседнем поле обновляется сразу, без перерисовки экрана
+  const link = (sel, text) => { const el = $app.querySelector(sel); if (el) el.value = text; };
+  if (f === 'act-kmval') { const n = num(e.target.value); if (n != null) { S.overlay.km = n; S.overlay.steps = ST.kmToSteps(n); link('[data-f="act-steps"]', S.overlay.steps); } }
+  if (f === 'act-steps') { const n = num(e.target.value); if (n != null) { S.overlay.steps = Math.round(n); S.overlay.km = ST.stepsToKm(n); link('[data-f="act-kmval"]', dec(S.overlay.km, 2)); } }
+  if (f === 'h-steps') { const n = num(e.target.value); if (n != null) { S.form.steps = Math.round(n); S.form.km = ST.stepsToKm(n); const el = $app.querySelector('[data-km-view]'); if (el) el.textContent = dec(S.form.km, 2); } }
+  if (f === 'steps-val') { const n = num(e.target.value); if (n != null) { S.overlay.steps = Math.round(n); S.overlay.km = ST.stepsToKm(n); link('[data-f="steps-km"]', dec(S.overlay.km, 2)); } }
+  if (f === 'steps-km') { const n = num(e.target.value); if (n != null) { S.overlay.km = n; S.overlay.steps = ST.kmToSteps(n); link('[data-f="steps-val"]', S.overlay.steps); } }
   const map = { 'v-ext': 'extUrl', 'v-url': 'url', 'v-title': 'title', 'v-notes': 'skipNotes', 'v-ex': 'exText', 'imp-text': 'text', 'imp-source': 'source' };
   if (f && map[f]) S.form[map[f]] = e.target.value;
 });

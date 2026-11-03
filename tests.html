@@ -9,7 +9,7 @@
 import * as cy from './js/cycle.js';
 import { suggest } from './js/progression.js';
 import { programExercises, upcomingSwaps, aquaPlan } from './js/programs.js';
-import { parseHealth } from './js/stats.js';
+import { parseHealth, stepsToKm, kmToSteps, walkSteps } from './js/stats.js';
 
 const out = document.getElementById('out');
 let pass = 0, fail = 0;
@@ -106,6 +106,25 @@ eq('аквааэробика, неделя 9: 3 круга по 35 с', [aquaPla
 eq('аквааэробика: ~12–20 мин', [aquaPlan('p1').minutes >= 10, aquaPlan('p3').minutes <= 22], [true, true]);
 eq('шаги из Здоровья: история S/K по дням', parseHealth('S;2026-10-23;8123\nK;2026-10-23;5,4\nS;2026-10-24;6000'), { '2026-10-23': { source: 'health', steps: 8123, km: 5.4 }, '2026-10-24': { source: 'health', steps: 6000 } });
 eq('шаги из Здоровья: старый формат', parseHealth('TR;2026-10-25;9000;6,1')['2026-10-25'].km, 6.1);
+
+// шаги ↔ километры
+eq('1350 шагов = 1 км', stepsToKm(1350), 1);
+eq('7400 шагов ≈ 5,48 км', stepsToKm(7400), 5.48);
+eq('5 км = 6750 шагов', kmToSteps(5), 6750);
+eq('прогулка с шагами: берутся введённые шаги', walkSteps({ steps: 8000, distanceKm: 5.9 }), 8000);
+eq('прогулка только в км: шаги по пересчёту', walkSteps({ distanceKm: 4 }), 5400);
+eq('прогулка только в шагах: км по пересчёту', walkSteps({ steps: 2700 }), 2700);
+
+// свободные часы бассейна (неделя 02.11–08.11.2026)
+const { poolFreeText, poolFreeFor } = await import('./js/plan.js');
+eq('бассейн пн', poolFreeText('2026-11-02'), '13:00–14:00, 15:00–17:00');
+eq('бассейн вт', poolFreeText('2026-11-03'), '10:30–13:30, 15:00–16:00');
+eq('бассейн ср', poolFreeText('2026-11-04'), '13:00–14:00');
+eq('бассейн чт', poolFreeText('2026-11-05'), '10:30–13:30, 15:00–16:00');
+eq('бассейн пт', poolFreeText('2026-11-06'), '12:00–14:00');
+eq('бассейн сб', poolFreeText('2026-11-07'), '15:00–22:00');
+eq('бассейн вс — весь день', poolFreeText('2026-11-08'), 'весь день');
+eq('бассейн: окна вт — два', poolFreeFor('2026-11-03').length, 2);
 
 out.innerHTML = `<b>${fail ? `<span class="fail">Провалено: ${fail}</span>` : '<span class="ok">Все тесты прошли</span>'} · пройдено ${pass}</b>\n\n` + out.innerHTML;
 document.title = fail ? `FAIL ${fail}` : `OK ${pass}`;

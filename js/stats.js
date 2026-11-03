@@ -8,10 +8,18 @@ const HOME_KINDS = ['ringfit', 'yoga', 'circuit', 'video', 'other'];
 export const sessionsOn = (date) => S.sessions.filter((s) => s.date === date && (s.status === 'done' || s.status === 'partial'));
 export const activitiesOn = (date) => S.activities.filter((a) => a.date === date);
 
-const walkKm = (a) => a.distanceKm || (a.minutes ? (a.minutes / 60) * 4.5 : 0);
+// Шаги и километры пересчитываются друг в друга по одной мерке
+export const stepsToKm = (steps) => +(steps / STEPS_PER_KM).toFixed(2);
+export const kmToSteps = (km) => Math.round(km * STEPS_PER_KM);
+
+const walkKm = (a) => a.distanceKm || (a.steps ? stepsToKm(a.steps) : a.minutes ? (a.minutes / 60) * 4.5 : 0);
+export const walkSteps = (a) => a.steps || kmToSteps(walkKm(a));
 
 export function estKm(date) {
   return activitiesOn(date).filter((a) => a.kind === 'walk').reduce((t, a) => t + walkKm(a), 0);
+}
+export function estSteps(date) {
+  return activitiesOn(date).filter((a) => a.kind === 'walk').reduce((t, a) => t + walkSteps(a), 0);
 }
 export function dayKm(date) {
   const h = S.health[date];
@@ -26,7 +34,9 @@ export function kmSource(date) {
 }
 export function daySteps(date) {
   const h = S.health[date];
-  return h && h.steps ? h.steps : Math.round(dayKm(date) * STEPS_PER_KM);
+  if (h && h.steps) return h.steps;
+  if (h && h.km != null) return kmToSteps(h.km);
+  return estSteps(date);
 }
 
 function sessionMinutes(s) {

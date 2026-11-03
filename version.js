@@ -1,3 +1,3 @@
 // Номер версии приложения. Поднимать вместе с VERSION в sw.js при каждой выкладке.
-self.APP_VERSION = '15';
-self.APP_DATE = '25.10.2026';
+self.APP_VERSION = '16';
+self.APP_DATE = '03.11.2026';

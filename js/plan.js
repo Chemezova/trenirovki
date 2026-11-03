@@ -55,6 +55,26 @@ export const CLASS_SCHEDULE = {
 };
 export const CLASS_MIN = 55;
 
+// Когда в бассейне нет групповых занятий и можно плавать самой (день недели 1–7 → окна)
+export const POOL_FREE = {
+  1: [['13:00', '14:00'], ['15:00', '17:00']],
+  2: [['10:30', '13:30'], ['15:00', '16:00']],
+  3: [['13:00', '14:00']],
+  4: [['10:30', '13:30'], ['15:00', '16:00']],
+  5: [['12:00', '14:00']],
+  6: [['15:00', '22:00']],
+  7: 'all',
+};
+export function poolFreeFor(date) {
+  const w = POOL_FREE[cy.weekday(date)];
+  return w === 'all' ? [] : (w || []).map(([start, end]) => ({ start, end }));
+}
+export const poolAllDay = (date) => POOL_FREE[cy.weekday(date)] === 'all';
+export function poolFreeText(date) {
+  if (poolAllDay(date)) return 'весь день';
+  return poolFreeFor(date).map((w) => `${w.start}–${w.end}`).join(', ');
+}
+
 export function classesFor(date) {
   return (CLASS_SCHEDULE[cy.weekday(date)] || []).map(([time, name]) => ({ id: `${time}|${name}`, time, name, ...(CLASS_INFO[name] || { stars: 1, level: 'care', note: '' }) }));
 }
@@ -154,4 +174,4 @@ export const PHASE_WHY = {
   deload: { what: '2 подхода, вес последней недели, лёгкое плавание.', why: 'Разгрузка: организм восстанавливается, а результат закрепляется.' },
   after: { what: 'Цикл завершён — время итогового замера и плана на следующий.', why: 'Новый цикл стартует с текущих рабочих весов.' },
 };
-export const MEASURE_HOW = 'Замеры раз в 4 недели: утром, натощак, после туалета — вес, талия, живот по пупку, бёдра, бедро. Вес в графике — средняя за неделю, поэтому дневные колебания не страшны.';
+export const MEASURE_HOW = 'Замеры раз в 4 недели: утром, натощак, после туалета — талия, объём груди, живот по пупку, бёдра, бедро. Вес записывается отдельно кнопкой «Вес»; в графике он — средняя за неделю, поэтому дневные колебания не страшны.';
