@@ -267,7 +267,7 @@ function planDayRow(date) {
   const d = P.effective(date, S.plan);
   const slot = P.slotFor(date, S.plan, S.settings.startDate, { sessions: S.sessions });
   const c = d.classId ? P.classById(date, d.classId) : null;
-  const title = d.cancelled ? 'Отменено' : d.type === 'gym' ? gymTitle(slot, d.gymKind, d.finisher) : 'Дома: прогулка, видео или йога, Ring Fit';
+  const title = d.cancelled ? 'Отменено' : d.type === 'gym' ? gymTitle(slot, d.gymKind, d.finisher) : 'Дома: ходьба, видео или йога, Ring Fit';
   const done = dayDone(date);
   const missed = date < cy.today() && !done && !d.cancelled;
   const meta = missed ? 'не отмечено' : [d.cancelled ? '' : P.plannedHours(date, S.plan), c ? `${c.time} ${c.name}` : '', ST.swimMinutesOn(date) ? `бассейн ${ST.swimMinutesOn(date)} мин` : '', done ? '✓ сделано' : ''].filter(Boolean).join(' · ');
@@ -423,7 +423,7 @@ function goalCalendar() {
   const clubDays = ST.clubVisitDates().filter((d) => d >= first && d <= last).length;
   const name = cy.capitalize(`${MONTHS[base.getMonth()]} ${base.getFullYear()}`);
   return `<section class="card" id="g-visits"><h2>Календарь занятий</h2>
-    <p class="sub">Тапни день, чтобы отметить посещение клуба, групповое занятие, бассейн, прогулку или домашнюю тренировку. В часах — всё за день вместе: зал, ходьба и дом.</p>
+    <p class="sub">Тапни день, чтобы отметить посещение клуба, групповое занятие, бассейн, ходьбу или домашнюю тренировку. В часах — всё за день вместе: зал, ходьба и дом.</p>
     <div class="nav-row"><button class="icon-btn" data-a="gcal-nav" data-v="-1" aria-label="Предыдущий месяц">${icon('chevL')}</button><div class="nav-title">${esc(name)}</div><button class="icon-btn" data-a="gcal-nav" data-v="1" aria-label="Следующий месяц">${icon('chevR')}</button></div>
     ${calGrid(first, last, t)}
     <div class="kpis k3"><div class="kpi"><b>${clubDays}</b><span>визитов в клуб</span></div><div class="kpi"><b>${activeDays}</b><span>активных дней</span></div><div class="kpi"><b>${hm(Math.round(minutes))}</b><span>активности всего</span></div></div></section>`;

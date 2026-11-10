@@ -20,7 +20,6 @@ export const GYM_KINDS = {
 };
 
 export const HOME_ITEMS = [
-  { kind: 'walk', name: 'Прогулка', hint: '1–1,5 ч', min: 75, km: 5, icon: 'walk' },
   { kind: 'video', name: 'Видео-тренировка или йога', hint: '30 мин', min: 30, icon: 'video', choices: [['circuit', 'Видео'], ['yoga', 'Йога']] },
   { kind: 'ringfit', name: 'Ring Fit', hint: '15 мин', min: 15, icon: 'ring' },
 ];

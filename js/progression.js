@@ -6,6 +6,17 @@ export function roundToStep(w, step) {
   return Math.max(0, +(Math.round(w / step) * step).toFixed(2));
 }
 
+// Плитки и кг — разные шкалы, пересчитать их без массы плитки нельзя. Поэтому подсказка считается только по подходам в той же единице,
+// а подходы в другой единице возвращаются отдельно — чтобы показать их с подписью. Подходы без веса подходят к любой единице.
+export function splitByUnit(history, unit, defaultUnit = 'plate') {
+  const unitOf = (s) => s.unit || defaultUnit;
+  const pick = (keep) => history.map((h) => ({ ...h, sets: h.sets.filter(keep) })).filter((h) => h.sets.length);
+  return {
+    same: pick((s) => s.weight == null || unitOf(s) === unit),
+    other: pick((s) => s.weight != null && unitOf(s) !== unit),
+  };
+}
+
 const usable = (h) => !h.lightDay && !h.aborted && h.phase !== 'deload' && h.sets.length > 0;
 const workWeight = (h) => { const ws = h.sets.map((s) => s.weight).filter((w) => w != null); return ws.length ? Math.max(...ws) : null; };
 const minReps = (h) => Math.min(...h.sets.map((s) => s.reps));

@@ -4,7 +4,7 @@ import * as snd from './sound.js';
 import * as P from './plan.js';
 import * as ST from './stats.js';
 import { S, DEFAULT_SETTINGS } from './state.js';
-import { suggest, roundToStep } from './progression.js';
+import { suggest, roundToStep, splitByUnit } from './progression.js';
 import { esc, dec, btn, chip, icon, stars } from './ui.js';
 import * as V from './views.js';
 import {
@@ -22,7 +22,9 @@ const plural = (n, [one, few, many]) => { const a = Math.abs(n) % 100, b = a % 1
 const minutesWord = (m) => `${m} ${plural(m, ['минута', 'минуты', 'минут'])}`;
 const mmss = (sec) => { const s = Math.max(0, Math.ceil(sec)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const fmtWeight = (w, unit) => (w == null ? 'Без веса' : `${dec(w)} ${unit === 'plate' ? 'плит.' : 'кг'}`);
-const setText = (x) => `${x.weight == null ? '' : `${dec(x.weight)}×`}${x.reps}`;
+// cur — единица, в которой считаем сейчас: если подход записан в другой, добавляем подпись («3 плит.×15»)
+const unitName = (u) => (u === 'plate' ? 'плит.' : 'кг');
+const setText = (x, cur, def = 'plate') => `${x.weight == null ? '' : `${dec(x.weight)}${cur && (x.unit || def) !== cur ? ` ${unitName(x.unit || def)}` : ''}×`}${x.reps}`;
 
 // ---------- загрузка и сохранение ----------
 async function load() {
@@ -134,7 +136,7 @@ function startWeightFor(ex, history) {
 
 function suggestionFor(ex) {
   const r = S.run;
-  const history = historyFor(ex.id);
+  const { same: history, other } = splitByUnit(historyFor(ex.id), unitFor(ex), ex.unit);
   const start = startWeightFor(ex, history);
   const sug = suggest({
     history,
@@ -151,6 +153,12 @@ function suggestionFor(ex) {
     sug.reason = start
       ? `Новый вариант. Старт от твоих ${dec(start.fromWeight)} в «${start.from}»${ex.startFactor < 1 ? ' — на одну сторону примерно половина' : ''}. Если идёт тяжело — шаг вниз.`
       : `Новый вариант «${EX_BY_ID[ex.progressFrom].name}». Подбери вес, с которым все повторы идут свободно.`;
+  }
+  if (sug.kind === 'calibration' && !history.length && other.length) {
+    const w = Math.max(...other[0].sets.map((x) => x.weight).filter((x) => x != null));
+    const was = other[0].sets.find((x) => x.weight === w);
+    const inPlates = (u) => (u || ex.unit) === 'plate';
+    sug.reason = `Раньше вес был записан в ${inPlates(was.unit) ? 'плитках' : 'кг'}: ${dec(w)}. Плитки и кг пересчитать нельзя — подбери вес в ${inPlates(unitFor(ex)) ? 'плитках' : 'кг'}, с которым все повторы идут свободно.`;
   }
   return sug;
 }
@@ -172,7 +180,9 @@ function ensureInputs() {
   else if (sug.targetReps != null && sug.kind !== 'same') reps = sug.targetReps;
   else if (sug.lastSets[done.length] != null) reps = sug.lastSets[done.length];
   if (prev) reps = prev.reps;
-  S.ui = { key, weight: prev ? prev.weight : sug.weight, reps, breath: false, sug };
+  // вес прошлого подхода берём, только если он в той же единице (плитки/кг)
+  const prevSame = prev && (prev.unit || ex.unit) === unitFor(ex);
+  S.ui = { key, weight: prevSame ? prev.weight : sug.weight, reps, breath: false, sug };
 }
 
 async function startSession(slot, walked, gymKind = 'full', finisher = 'pool') {
@@ -334,6 +344,7 @@ function renderExercises() {
   const canWarmup = planOrder.indexOf(ex.id) < 2 && !r.sets.some((x) => x.exerciseId === ex.id) && sug.weight != null;
   const isMachine = ex.loadType === 'machine' || ex.loadType === 'cable';
   const hist = historyFor(ex.id).slice(0, 3);
+  const curUnit = unitFor(ex);
   const showWeight = loadTypeFor(ex) !== 'bodyweight' && sug.kind !== 'bodyweight';
   const bigSug = !showWeight ? `${sug.targetReps ?? range.max} повт.` : sug.kind === 'calibration' && sug.weight == null ? '<span class="big-text">Подбери вес</span>' : esc(fmtWeight(sug.weight, unit));
 
@@ -344,8 +355,8 @@ function renderExercises() {
     ${ex.eyeNote ? `<p class="eye-note">${esc(ex.eyeNote)}</p>` : ''}
     <section class="suggest"><div class="sub">Подсказка</div><div class="big-num">${bigSug}</div><p>${esc(sug.reason)}</p>
       ${sug.offerDumbbells ? btn('Перейти на гантели', 'to-dumbbells') : ''}</section>
-    ${hist.length ? `<section class="history"><div class="sub">В прошлый раз</div>${hist.map((h) => `<p>${cy.fmtShort(h.date)}: ${h.sets.map(setText).join(', ')}${h.sets.some((x) => x.breathHold) ? ' · трудно дышать' : ''}${h.lightDay ? ' · лёгкий день' : ''}</p>`).join('')}</section>` : ''}
-    ${done.length ? `<p class="sub">Сегодня: ${done.map((x) => `${setText(x)}${x.breathHold ? ' (трудно дышать)' : ''}`).join(', ')}</p>` : ''}
+    ${hist.length ? `<section class="history"><div class="sub">В прошлый раз</div>${hist.map((h) => `<p>${cy.fmtShort(h.date)}: ${h.sets.map((x) => setText(x, curUnit, ex.unit)).join(', ')}${h.sets.some((x) => x.breathHold) ? ' · трудно дышать' : ''}${h.lightDay ? ' · лёгкий день' : ''}</p>`).join('')}</section>` : ''}
+    ${done.length ? `<p class="sub">Сегодня: ${done.map((x) => `${setText(x, curUnit, ex.unit)}${x.breathHold ? ' (трудно дышать)' : ''}`).join(', ')}</p>` : ''}
     ${showWeight ? `<div class="stepper-block"><div class="stepper-label">Вес <button class="btn-link" data-a="unit">${unit === 'plate' ? 'в плитках · сменить на кг' : 'в кг · сменить на плитки'}</button></div>
       <div class="stepper"><button data-a="w-minus" aria-label="Меньше вес">−</button><div class="val">${esc(fmtWeight(S.ui.weight, unit))}</div><button data-a="w-plus" aria-label="Больше вес">+</button></div></div>` : ''}
     <div class="stepper-block"><div class="stepper-label">Повторы${perSide(ex) ? ' (на сторону)' : ''}</div>
@@ -526,7 +537,7 @@ function renderMeasure() {
 }
 
 function renderHomeLog() {
-  if (S.form.kind !== 'home') S.form = { kind: 'home', type: S.form.preset || 'walk', minutes: null, km: 5, date: S.form.date || cy.today(), feel: null, breath: false };
+  if (S.form.kind !== 'home') S.form = { kind: 'home', type: S.form.preset || 'yoga', minutes: null, km: 5, date: S.form.date || cy.today(), feel: null, breath: false };
   const f = S.form;
   const k = HOME_KINDS.find((x) => x.id === f.type);
   const minutes = f.minutes ?? (f.type === 'walk' ? 75 : k.minutes);
@@ -929,7 +940,7 @@ const A = {
   'w-plus': () => { const step = stepFor(currentEx()); S.ui.weight = roundToStep((S.ui.weight ?? 0) + step, step); render(); },
   'r-minus': () => { S.ui.reps = Math.max(1, S.ui.reps - 1); render(); },
   'r-plus': () => { S.ui.reps += 1; render(); },
-  unit: async () => { const ex = currentEx(); S.exSettings[ex.id] = { ...exSet(ex), unit: unitFor(ex) === 'plate' ? 'kg' : 'plate' }; await saveExSettings(ex.id); render(); },
+  unit: async () => { const ex = currentEx(); S.exSettings[ex.id] = { ...exSet(ex), unit: unitFor(ex) === 'plate' ? 'kg' : 'plate' }; await saveExSettings(ex.id); S.ui = {}; render(); },
   'to-dumbbells': async () => { const ex = currentEx(); S.exSettings[ex.id] = { ...exSet(ex), loadTypeOverride: 'dumbbell' }; await saveExSettings(ex.id); S.ui = {}; render(); },
   'set-done': async () => {
     const r = S.run;
@@ -1260,7 +1271,8 @@ function render() {
   await load();
   const params = new URLSearchParams(location.search);
   const goTo = params.get('go');
-  if (goTo === 'home' || goTo === 'walk') { S.form = { preset: goTo === 'walk' ? 'walk' : 'ringfit' }; S.screen = 'homeLog'; }
+  if (goTo === 'home') { S.form = { preset: 'ringfit' }; S.screen = 'homeLog'; }
+  else if (goTo === 'walk') { const d = cy.today(); S.overlay = { type: 'steps', date: d, steps: Math.round(ST.daySteps(d)), km: +ST.dayKm(d).toFixed(2), fromSheet: false }; }
   else if (goTo === 'measure') S.screen = 'measure';
   render();
   db.persist();

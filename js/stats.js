@@ -108,7 +108,7 @@ export const TYPE_ROWS = [
   ['cardio', 'Кардио в клубе', 'heart'],
   ['pool', 'Бассейн', 'swim'],
   ['class', 'Групповые занятия', 'group'],
-  ['walk', 'Прогулки', 'walk'],
+  ['walk', 'Ходьба', 'walk'],
   ['ringfit', 'Ring Fit', 'ring'],
   ['yoga', 'Йога', 'yoga'],
   ['circuit', 'Видео-тренировки', 'video'],

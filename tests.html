@@ -201,6 +201,22 @@ eq('копия: больше месяца', backupStatus('2026-10-05T10:00:00Z',
 eq('копия: сколько дней назад', backupStatus('2026-11-05T10:00:00Z', '2026-11-09', 50).days, 4);
 S.sessions = []; S.activities = []; S.health = {};
 
+// плитки и кг: подсказка не смешивает шкалы
+const { splitByUnit } = await import('./js/progression.js');
+const hU = [
+  { date: '2026-11-07', sets: [{ weight: 3, unit: 'plate', reps: 13 }, { weight: 3, unit: 'plate', reps: 13 }] },
+  { date: '2026-11-05', sets: [{ weight: 3, reps: 12 }] },
+];
+eq('единицы: в плитках — всё своё, подход без unit считается плитками', splitByUnit(hU, 'plate', 'plate').same.length, 2);
+eq('единицы: в кг — своего нет', splitByUnit(hU, 'kg', 'plate').same.length, 0);
+eq('единицы: в кг — плитки отдельно', splitByUnit(hU, 'kg', 'plate').other.length, 2);
+eq('единицы: подход без веса подходит к любой единице', splitByUnit([{ date: 'x', sets: [{ weight: null, reps: 10 }] }], 'kg', 'plate').same.length, 1);
+eq('единицы: смешанная тренировка делится по подходам', splitByUnit([{ date: 'x', sets: [{ weight: 3, unit: 'plate', reps: 15 }, { weight: 55, unit: 'kg', reps: 12 }] }], 'kg', 'plate').same[0].sets[0].weight, 55);
+const sugKg = suggest({ history: splitByUnit(hU, 'kg', 'plate').same, range: { min: 12, max: 15 }, step: 5, mode: 'double', today: '2026-11-10' });
+eq('единицы: в кг без своей истории — калибровка, а не «3 кг»', [sugKg.kind, sugKg.weight], ['calibration', null]);
+const sugPl = suggest({ history: splitByUnit(hU, 'plate', 'plate').same, range: { min: 12, max: 15 }, step: 1, mode: 'double', today: '2026-11-10' });
+eq('единицы: в плитках подсказка остаётся 3', sugPl.weight, 3);
+
 out.innerHTML = `<b>${fail ? `<span class="fail">Провалено: ${fail}</span>` : '<span class="ok">Все тесты прошли</span>'} · пройдено ${pass}</b>\n\n` + out.innerHTML;
 document.title = fail ? `FAIL ${fail}` : `OK ${pass}`;
 </script>
