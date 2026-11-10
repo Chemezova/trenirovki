@@ -4,7 +4,7 @@ import * as snd from './sound.js';
 import * as P from './plan.js';
 import * as ST from './stats.js';
 import { S, DEFAULT_SETTINGS } from './state.js';
-import { suggest, roundToStep } from './progression.js';
+import { suggest, roundToStep, historyInUnit } from './progression.js';
 import { esc, dec, btn, chip, icon, stars } from './ui.js';
 import * as V from './views.js';
 import {
@@ -22,7 +22,9 @@ const plural = (n, [one, few, many]) => { const a = Math.abs(n) % 100, b = a % 1
 const minutesWord = (m) => `${m} ${plural(m, ['минута', 'минуты', 'минут'])}`;
 const mmss = (sec) => { const s = Math.max(0, Math.ceil(sec)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const fmtWeight = (w, unit) => (w == null ? 'Без веса' : `${dec(w)} ${unit === 'plate' ? 'плит.' : 'кг'}`);
-const setText = (x) => `${x.weight == null ? '' : `${dec(x.weight)}×`}${x.reps}`;
+const unitName = (u) => (u === 'plate' ? 'плит.' : 'кг');
+// Подход в истории: «55×12»; если вес записан в другой единице, чем сейчас, она подписывается: «3 плит.×15»
+const setText = (x, unit) => `${x.weight == null ? '' : `${dec(x.weight)}${unit && x.unit && x.unit !== unit ? ` ${unitName(x.unit)}` : ''}×`}${x.reps}`;
 
 // ---------- загрузка и сохранение ----------
 async function load() {
@@ -125,7 +127,7 @@ function startWeightFor(ex, history) {
   const parent = EX_BY_ID[ex.progressFrom];
   const last = historyFor(ex.progressFrom)[0];
   if (!last) return null;
-  const ws = last.sets.map((x) => x.weight).filter((w) => w != null);
+  const ws = historyInUnit([last], unitFor(ex), parent.unit).history[0].sets.map((x) => x.weight).filter((w) => w != null);
   if (!ws.length) return null;
   const step = stepFor(ex);
   const w = Math.max(...ws) * ex.startFactor;
@@ -134,7 +136,7 @@ function startWeightFor(ex, history) {
 
 function suggestionFor(ex) {
   const r = S.run;
-  const history = historyFor(ex.id);
+  const { history, foreign } = historyInUnit(historyFor(ex.id), unitFor(ex), ex.unit);
   const start = startWeightFor(ex, history);
   const sug = suggest({
     history,
@@ -147,6 +149,9 @@ function suggestionFor(ex) {
     forceBodyweight: !!ex.bodyweightWeek1 && r.week <= 1,
     offerDumbbells: !!ex.offerDumbbells && loadTypeFor(ex) !== 'dumbbell',
   });
+  if (sug.kind === 'calibration' && sug.weight == null && foreign) {
+    sug.reason = `Раньше вес записывался в ${foreign.unit === 'plate' ? 'плитках' : 'кг'} (последний раз ${dec(foreign.weight)} ${unitName(foreign.unit)}). Плитки и кг не пересчитать — у каждого тренажёра своя плитка. Подбери вес, с которым все повторы идут свободно; если вернёшься к прежней единице, подсказка вернётся.`;
+  }
   if (sug.kind === 'calibration' && ex.progressFrom) {
     sug.reason = start
       ? `Новый вариант. Старт от твоих ${dec(start.fromWeight)} в «${start.from}»${ex.startFactor < 1 ? ' — на одну сторону примерно половина' : ''}. Если идёт тяжело — шаг вниз.`
@@ -158,7 +163,7 @@ function suggestionFor(ex) {
 function ensureInputs() {
   const ex = currentEx();
   const done = workSets(ex.id);
-  const key = `${S.run.id}:${ex.id}:${done.length}`;
+  const key = `${S.run.id}:${ex.id}:${done.length}:${unitFor(ex)}`;  // единица в ключе: при смене плиток на кг подсказка пересчитывается
   if (S.ui.key === key) return;
   let sug = suggestionFor(ex);
   const step = stepFor(ex);
@@ -172,7 +177,8 @@ function ensureInputs() {
   else if (sug.targetReps != null && sug.kind !== 'same') reps = sug.targetReps;
   else if (sug.lastSets[done.length] != null) reps = sug.lastSets[done.length];
   if (prev) reps = prev.reps;
-  S.ui = { key, weight: prev ? prev.weight : sug.weight, reps, breath: false, sug };
+  const prevSameUnit = prev && (prev.unit || ex.unit) === unitFor(ex);
+  S.ui = { key, weight: prevSameUnit ? prev.weight : sug.weight, reps, breath: false, sug };
 }
 
 async function startSession(slot, walked, gymKind = 'full', finisher = 'pool') {
@@ -344,8 +350,8 @@ function renderExercises() {
     ${ex.eyeNote ? `<p class="eye-note">${esc(ex.eyeNote)}</p>` : ''}
     <section class="suggest"><div class="sub">Подсказка</div><div class="big-num">${bigSug}</div><p>${esc(sug.reason)}</p>
       ${sug.offerDumbbells ? btn('Перейти на гантели', 'to-dumbbells') : ''}</section>
-    ${hist.length ? `<section class="history"><div class="sub">В прошлый раз</div>${hist.map((h) => `<p>${cy.fmtShort(h.date)}: ${h.sets.map(setText).join(', ')}${h.sets.some((x) => x.breathHold) ? ' · трудно дышать' : ''}${h.lightDay ? ' · лёгкий день' : ''}</p>`).join('')}</section>` : ''}
-    ${done.length ? `<p class="sub">Сегодня: ${done.map((x) => `${setText(x)}${x.breathHold ? ' (трудно дышать)' : ''}`).join(', ')}</p>` : ''}
+    ${hist.length ? `<section class="history"><div class="sub">В прошлый раз</div>${hist.map((h) => `<p>${cy.fmtShort(h.date)}: ${h.sets.map((x) => setText(x, unit)).join(', ')}${h.sets.some((x) => x.breathHold) ? ' · трудно дышать' : ''}${h.lightDay ? ' · лёгкий день' : ''}</p>`).join('')}</section>` : ''}
+    ${done.length ? `<p class="sub">Сегодня: ${done.map((x) => `${setText(x, unit)}${x.breathHold ? ' (трудно дышать)' : ''}`).join(', ')}</p>` : ''}
     ${showWeight ? `<div class="stepper-block"><div class="stepper-label">Вес <button class="btn-link" data-a="unit">${unit === 'plate' ? 'в плитках · сменить на кг' : 'в кг · сменить на плитки'}</button></div>
       <div class="stepper"><button data-a="w-minus" aria-label="Меньше вес">−</button><div class="val">${esc(fmtWeight(S.ui.weight, unit))}</div><button data-a="w-plus" aria-label="Больше вес">+</button></div></div>` : ''}
     <div class="stepper-block"><div class="stepper-label">Повторы${perSide(ex) ? ' (на сторону)' : ''}</div>
@@ -526,12 +532,12 @@ function renderMeasure() {
 }
 
 function renderHomeLog() {
-  if (S.form.kind !== 'home') S.form = { kind: 'home', type: S.form.preset || 'walk', minutes: null, km: 5, date: S.form.date || cy.today(), feel: null, breath: false };
+  if (S.form.kind !== 'home') S.form = { kind: 'home', type: S.form.preset && S.form.preset !== 'walk' ? S.form.preset : 'ringfit', minutes: null, km: 5, date: S.form.date || cy.today(), feel: null, breath: false };
   const f = S.form;
   const k = HOME_KINDS.find((x) => x.id === f.type);
   const minutes = f.minutes ?? (f.type === 'walk' ? 75 : k.minutes);
   return `${backHeader('Активность')}<section class="card">
-    <fieldset><legend>Что</legend><div class="chips">${HOME_KINDS.map((x) => chip(x.name, 'h-type', x.id, f.type === x.id)).join('')}</div></fieldset>
+    <fieldset><legend>Что</legend><div class="chips">${HOME_KINDS.filter((x) => x.id !== 'walk').map((x) => chip(x.name, 'h-type', x.id, f.type === x.id)).join('')}</div></fieldset>
     ${k.safety ? `<p class="eye-note">${esc(k.safety)}</p>` : ''}
     <div class="stepper-block"><div class="stepper-label">Минуты</div><div class="stepper"><button data-a="h-min" data-v="-5" aria-label="Меньше минут">−</button><div class="val">${minutes}</div><button data-a="h-min" data-v="5" aria-label="Больше минут">+</button></div></div>
     ${f.type === 'walk' ? `<div class="stepper-block"><div class="stepper-label">Километры</div><div class="stepper"><button data-a="h-km" data-v="-0.5" aria-label="Меньше">−</button><div class="val" data-km-view>${dec(f.km)}</div><button data-a="h-km" data-v="0.5" aria-label="Больше">+</button></div></div>
@@ -566,7 +572,7 @@ function renderOverlay() {
       <p class="sub">Впиши шаги или километры — второе число посчитается само (примерно ${ST.STEPS_PER_KM} шагов в километре).</p>
       <label class="field">Шаги<input type="text" inputmode="numeric" data-f="steps-val" value="${Math.round(o.steps)}"></label>
       <label class="field">Километры<input type="text" inputmode="decimal" data-f="steps-km" value="${dec(o.km, 2)}"></label>
-      ${P.effective(o.date, S.plan).type === 'home' && !P.effective(o.date, S.plan).cancelled ? '<p class="note">На домашнем дне шаги засчитаются как прогулка.</p>' : ''}
+      ${P.effective(o.date, S.plan).type === 'home' && !P.effective(o.date, S.plan).cancelled ? '<p class="note">На домашнем дне шаги засчитаются как активность дня.</p>' : ''}
       ${btn('Сохранить', 'steps-save', { cls: 'btn-primary btn-xl' })}${btn('Отмена', o.fromSheet ? 'day' : 'close', { v: o.date, cls: 'btn-link' })}`;
   }
   else if (o.type === 'videoPick') inner = V.renderVideoPick(o.date, o.kind);
@@ -1260,7 +1266,8 @@ function render() {
   await load();
   const params = new URLSearchParams(location.search);
   const goTo = params.get('go');
-  if (goTo === 'home' || goTo === 'walk') { S.form = { preset: goTo === 'walk' ? 'walk' : 'ringfit' }; S.screen = 'homeLog'; }
+  if (goTo === 'home') { S.form = { preset: 'ringfit' }; S.screen = 'homeLog'; }
+  else if (goTo === 'walk') { const t = cy.today(); S.overlay = { type: 'steps', date: t, steps: Math.round(ST.daySteps(t)), km: +ST.dayKm(t).toFixed(2), fromSheet: false }; }
   else if (goTo === 'measure') S.screen = 'measure';
   render();
   db.persist();

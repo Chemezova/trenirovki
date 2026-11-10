@@ -29,7 +29,7 @@ export function dayKm(date) {
 }
 export function kmSource(date) {
   const h = S.health[date];
-  if (!h) return 'оценка по прогулкам';
+  if (!h) return 'оценка по отмеченной ходьбе';
   return h.source === 'manual' ? 'вручную' : 'из Здоровья';
 }
 export function daySteps(date) {
@@ -108,7 +108,7 @@ export const TYPE_ROWS = [
   ['cardio', 'Кардио в клубе', 'heart'],
   ['pool', 'Бассейн', 'swim'],
   ['class', 'Групповые занятия', 'group'],
-  ['walk', 'Прогулки', 'walk'],
+  ['walk', 'Ходьба', 'walk'],
   ['ringfit', 'Ring Fit', 'ring'],
   ['yoga', 'Йога', 'yoga'],
   ['circuit', 'Видео-тренировки', 'video'],

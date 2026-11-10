@@ -11,6 +11,7 @@ import { suggest } from './js/progression.js';
 import { programExercises, upcomingSwaps, aquaPlan } from './js/programs.js';
 import { parseHealth, stepsToKm, kmToSteps, walkSteps, sessionPoolMin, swimMinutesOn, clubVisitDates, visitCounts, walkTotals, stepsByDay, stepsByWeek, healthInfo, hoursShortText, backupStatus } from './js/stats.js';
 import { S } from './js/state.js';
+import { historyInUnit } from './js/progression.js';
 
 const out = document.getElementById('out');
 let pass = 0, fail = 0;
@@ -200,6 +201,25 @@ eq('копия: 15 дней — давно', backupStatus('2026-10-25T10:00:00Z'
 eq('копия: больше месяца', backupStatus('2026-10-05T10:00:00Z', '2026-11-09', 50).level, 'stale');
 eq('копия: сколько дней назад', backupStatus('2026-11-05T10:00:00Z', '2026-11-09', 50).days, 4);
 S.sessions = []; S.activities = []; S.health = {};
+
+// плитки и кг не смешиваются
+const plateHist = [{ date: '2026-11-07', at: '2026-11-07', phase: 'p1', sets: [{ weight: 3, unit: 'plate', reps: 15 }, { weight: 3, unit: 'plate', reps: 15 }] }, { date: '2026-11-05', at: '2026-11-05', phase: 'p1', sets: [{ weight: 3, unit: 'plate', reps: 12 }] }];
+const asKg = historyInUnit(plateHist, 'kg', 'plate');
+eq('единицы: плитки при кг теряют вес', asKg.history[0].sets.map((x) => x.weight), [null, null]);
+eq('единицы: повторы остались', asKg.history[0].sets.map((x) => x.reps), [15, 15]);
+eq('единицы: запомнен последний вес в плитках', asKg.foreign, { unit: 'plate', weight: 3 });
+const asPlate = historyInUnit(plateHist, 'plate', 'plate');
+eq('единицы: в своих плитках всё как было', asPlate.history[0].sets.map((x) => x.weight), [3, 3]);
+eq('единицы: в своих плитках foreign нет', asPlate.foreign, null);
+const mixed = historyInUnit([{ date: '2026-11-09', sets: [{ weight: 55, unit: 'kg', reps: 12 }] }, ...plateHist], 'kg', 'plate');
+eq('единицы: смесь — кг остаются', mixed.history[0].sets[0].weight, 55);
+eq('единицы: смесь — плитки обнулены', mixed.history[1].sets[0].weight, null);
+eq('единицы: смесь — foreign нет, есть свой вес', mixed.foreign, null);
+eq('единицы: подход без unit — единица упражнения', historyInUnit([{ date: '2026-11-05', sets: [{ weight: 5, reps: 10 }] }], 'kg', 'kg').history[0].sets[0].weight, 5);
+const sugKg = suggest({ history: asKg.history, range: { min: 12, max: 15 }, step: 1, mode: 'double', today: '2026-11-10', startWeight: null });
+eq('подсказка в кг после плиток — подбор веса, не «3 кг»', [sugKg.kind, sugKg.weight], ['calibration', null]);
+const sugPlate = suggest({ history: asPlate.history, range: { min: 12, max: 15 }, step: 1, mode: 'double', today: '2026-11-10', startWeight: null });
+eq('подсказка в плитках: вес 3 плитки на месте', sugPlate.weight != null && sugPlate.weight >= 3, true);
 
 out.innerHTML = `<b>${fail ? `<span class="fail">Провалено: ${fail}</span>` : '<span class="ok">Все тесты прошли</span>'} · пройдено ${pass}</b>\n\n` + out.innerHTML;
 document.title = fail ? `FAIL ${fail}` : `OK ${pass}`;

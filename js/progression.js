@@ -6,6 +6,25 @@ export function roundToStep(w, step) {
   return Math.max(0, +(Math.round(w / step) * step).toFixed(2));
 }
 
+// Плитки и килограммы друг в друга не переводятся: у каждого тренажёра своя плитка.
+// Подходы, записанные в другой единице, теряют вес (остаются только повторы); последний такой вес
+// возвращается отдельно (foreign), чтобы объяснить это в подсказке. История идёт от новых к старым.
+export function historyInUnit(history, unit, defaultUnit) {
+  let foreign = null;
+  let own = false;
+  const out = history.map((h) => ({
+    ...h,
+    sets: h.sets.map((s) => {
+      if (s.weight == null) return s;
+      const su = s.unit || defaultUnit;
+      if (su === unit) { own = true; return s; }
+      if (!foreign) foreign = { unit: su, weight: s.weight };
+      return { ...s, weight: null };
+    }),
+  }));
+  return { history: out, foreign: own ? null : foreign };
+}
+
 const usable = (h) => !h.lightDay && !h.aborted && h.phase !== 'deload' && h.sets.length > 0;
 const workWeight = (h) => { const ws = h.sets.map((s) => s.weight).filter((w) => w != null); return ws.length ? Math.max(...ws) : null; };
 const minReps = (h) => Math.min(...h.sets.map((s) => s.reps));
