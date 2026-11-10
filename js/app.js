@@ -353,7 +353,7 @@ function renderExercises() {
     ${hist.length ? `<section class="history"><div class="sub">В прошлый раз</div>${hist.map((h) => `<p>${cy.fmtShort(h.date)}: ${h.sets.map((x) => setText(x, unit)).join(', ')}${h.sets.some((x) => x.breathHold) ? ' · трудно дышать' : ''}${h.lightDay ? ' · лёгкий день' : ''}</p>`).join('')}</section>` : ''}
     ${done.length ? `<p class="sub">Сегодня: ${done.map((x) => `${setText(x, unit)}${x.breathHold ? ' (трудно дышать)' : ''}`).join(', ')}</p>` : ''}
     ${showWeight ? `<div class="stepper-block"><div class="stepper-label">Вес <button class="btn-link" data-a="unit">${unit === 'plate' ? 'в плитках · сменить на кг' : 'в кг · сменить на плитки'}</button></div>
-      <div class="stepper"><button data-a="w-minus" aria-label="Меньше вес">−</button><div class="val">${esc(fmtWeight(S.ui.weight, unit))}</div><button data-a="w-plus" aria-label="Больше вес">+</button></div></div>` : ''}
+      <div class="stepper"><button data-a="w-minus" aria-label="Меньше вес">−</button><input class="val" type="text" inputmode="decimal" data-f="w-val" value="${S.ui.weight == null ? '' : dec(S.ui.weight)}" placeholder="без веса" aria-label="Вес, ${unit === 'plate' ? 'плитки' : 'кг'}"><button data-a="w-plus" aria-label="Больше вес">+</button></div></div>` : ''}
     <div class="stepper-block"><div class="stepper-label">Повторы${perSide(ex) ? ' (на сторону)' : ''}</div>
       <div class="stepper"><button data-a="r-minus" aria-label="Меньше повторов">−</button><div class="val">${S.ui.reps}</div><button data-a="r-plus" aria-label="Больше повторов">+</button></div></div>
     <label class="check"><input type="checkbox" data-f="breath" ${S.ui.breath ? 'checked' : ''}> Хотелось задержать дыхание / напрягалось лицо</label>
@@ -1240,6 +1240,7 @@ $app.addEventListener('change', async (e) => {
 $app.addEventListener('input', (e) => {
   const f = e.target.dataset.f;
   if (f && f.startsWith('m-')) S.form[f.slice(2)] = e.target.value;
+  if (f === 'w-val') { const t = e.target.value.trim(); if (t === '') S.ui.weight = null; else { const n = num(t); if (n != null && n >= 0) S.ui.weight = n; } }
   if (f === 'act-minutes') { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) S.overlay.minutes = n; }
   // шаги и км связаны: правим одно — второе в соседнем поле обновляется сразу, без перерисовки экрана
   const link = (sel, text) => { const el = $app.querySelector(sel); if (el) el.value = text; };
