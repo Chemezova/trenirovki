@@ -55,6 +55,11 @@ export const CLASS_SCHEDULE = {
 };
 export const CLASS_MIN = 55;
 
+// План шагов в день по фазе недели (из ТЗ: 7–8, 8–9, 9–10 тыс.)
+export const STEPS_GOAL = { p1: 7500, p2: 8500, p3: 9500, deload: 7000, after: 8000 };
+export const stepsGoalForPhase = (phase) => STEPS_GOAL[phase] || 7500;
+export const stepsGoalOn = (date, start, shifts = []) => stepsGoalForPhase(cy.phaseOf(cy.weekOf(date, start, shifts)));
+
 // Когда в бассейне нет групповых занятий и можно плавать самой (день недели 1–7 → окна)
 export const POOL_FREE = {
   1: [['13:00', '14:00'], ['15:00', '17:00']],

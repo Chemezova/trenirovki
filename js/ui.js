@@ -91,12 +91,12 @@ export function heroArt(kind) {
 }
 
 // Столбики: [{ label, value, title }]
-export function barChart(items, { unit = '', goal = null, height = 150, fmt = (v) => dec(v, 0) } = {}) {
+export function barChart(items, { unit = '', goal = null, height = 150, fmt = (v) => dec(v, 0), vals = true } = {}) {
   const W = 320;
   const H = height;
   const top = 18;
   const bottom = 24;
-  const max = Math.max(goal || 0, ...items.map((i) => i.value), 1);
+  const max = Math.max(goal || 0, ...items.map((i) => i.value), ...items.map((i) => i.plan || 0), 1);
   const bw = W / items.length;
   const y = (v) => top + (H - top - bottom) * (1 - v / max);
   const bars = items.map((it, i) => {
@@ -105,7 +105,8 @@ export function barChart(items, { unit = '', goal = null, height = 150, fmt = (v
     const yy = y(it.value);
     return `<g><title>${esc(it.title || `${it.label}: ${fmt(it.value)} ${unit}`)}</title>
       <rect x="${x}" y="${yy}" width="${w}" height="${Math.max(0, H - bottom - yy)}" rx="5" class="bar${it.current ? ' bar-current' : ''}"/>
-      ${it.value ? `<text x="${x + w / 2}" y="${yy - 5}" text-anchor="middle" class="bar-val">${fmt(it.value)}</text>` : ''}
+      ${it.plan ? `<line x1="${i * bw + bw * 0.08}" x2="${(i + 1) * bw - bw * 0.08}" y1="${y(it.plan)}" y2="${y(it.plan)}" class="plan-mark"/>` : ''}
+      ${vals && it.value ? `<text x="${x + w / 2}" y="${yy - 5}" text-anchor="middle" class="bar-val">${fmt(it.value)}</text>` : ''}
       <text x="${x + w / 2}" y="${H - 7}" text-anchor="middle" class="bar-lbl">${esc(it.label)}</text></g>`;
   }).join('');
   const goalLine = goal ? `<line x1="0" x2="${W}" y1="${y(goal)}" y2="${y(goal)}" class="goal-line"/><text x="${W - 2}" y="${y(goal) - 4}" text-anchor="end" class="goal-lbl">цель ${fmt(goal)}</text>` : '';

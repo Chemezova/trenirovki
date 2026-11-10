@@ -30,9 +30,8 @@ export function gymTitle(slot, kind, finisher = 'pool') {
 
 const homeDone = (date, kind) => ST.activitiesOn(date).find((a) => (kind === 'walk' ? a.kind === 'walk' && !a.commute : kind === 'video' ? ['circuit', 'yoga', 'video'].includes(a.kind) : a.kind === kind));
 
-function stepsGoalPerDay(phase) {
-  return { p1: 7500, p2: 8500, p3: 9500, deload: 7000, after: 8000 }[phase] || 7500;
-}
+const stepsGoalPerDay = P.stepsGoalForPhase;
+const fmtN = (n) => Math.round(n).toLocaleString('ru-RU');
 
 // ---------- элементы дня ----------
 function tick(action, v, pressed, { disabled = false, label = 'Отметить' } = {}) {
@@ -80,6 +79,16 @@ export function dayItemsHtml(date) {
       const rowAct = !future && canEdit && act ? `data-a="h-toggle" data-v="${esc(`${date}|${it.kind === 'video' ? (done ? done.kind : 'circuit') : it.kind}`)}" role="button" tabindex="0"` : '';
       rows.push(`<div class="day-item ${cls} ${rowAct ? 'is-tappable' : ''}" ${rowAct}><div class="di-icon">${icon(it.icon)}</div><div class="di-body"><div class="di-title">${esc(it.name)}</div><div class="di-meta">${esc(meta)}</div>${choices}</div>${act}</div>`);
     }
+  }
+
+  // ходьба за день — отдельный блок, как полноценная активность (шаги из Здоровья или вручную)
+  if (date <= today && !d.cancelled) {
+    const steps = Math.round(ST.daySteps(date));
+    const goal = P.stepsGoalOn(date, S.settings.startDate, S.settings.shifts);
+    const pct = Math.min(100, Math.round((steps / goal) * 100));
+    const meta = steps ? `${fmtN(steps)} из ${fmtN(goal)} шагов · ${dec(ST.dayKm(date))} км · ${ST.kmSource(date)}` : `план ${fmtN(goal)} шагов — пока нет данных`;
+    const act = canEdit ? btn(steps ? 'Изменить' : 'Добавить', 'km-edit', { v: date, cls: 'btn-small btn-secondary' }) : '';
+    rows.push(`<div class="day-item walk-row ${steps >= goal ? 'is-done' : ''}"><div class="di-icon">${icon('walk')}</div><div class="di-body"><div class="di-title">Ходьба за день</div><div class="di-meta">${esc(meta)}</div><div class="walkbar"><i style="width:${pct}%"></i></div></div>${act}</div>`);
   }
 
   // выбранное групповое занятие
@@ -196,27 +205,54 @@ export function renderHome() {
   if (cp != null && !S.measurements.some((m) => m.checkpoint === cp && m.waistCm != null)) {
     parts.push(`<section class="banner"><p><b>Контрольный замер${cp === 0 ? ' 0' : ` после недели ${cp}`}.</b> Утром, натощак.</p>${btn('Записать', 'go', { v: 'measure', cls: 'btn-small btn-secondary' })}</section>`);
   }
-  const lb = S.settings.lastBackupAt;
-  if (S.sessions.length + S.measurements.length >= 3 && (!lb || cy.daysBetween(lb.slice(0, 10), t) > 14)) {
-    parts.push(`<section class="banner"><p><b>Сохрани копию данных</b> — всё хранится только на телефоне.</p>${btn('Сохранить', 'export', { cls: 'btn-small btn-secondary' })}</section>`);
-  }
 
-  const visits = ST.clubVisitDates();
+  const vc = ST.visitCounts(t);
   const wl = ST.weightLoss();
   const ws = cy.weekStart(t);
-  const weekKm = ST.sumRange(ST.dayKm, ws, t);
-  const monthKm = ST.sumRange(ST.dayKm, `${t.slice(0, 8)}01`, t);
+  const wk = ST.walkTotals(t);
+  const go = icon('chevR', { size: 14 });
   parts.push(`<section class="stats">
-    <div class="stat">${icon('dumbbell')}<div class="stat-val">${visits.length}</div><div class="stat-lbl">${visits.length ? `визитов с ${cy.fmtShort(visits[0]).slice(3)}` : 'визитов — первый впереди'}</div></div>
-    <div class="stat">${icon('scale')}<div class="stat-val">${wl ? `${wl.lost > 0 ? '−' : wl.lost < 0 ? '+' : ''}${dec(Math.abs(wl.lost))}` : '—'}<small> кг</small></div><div class="stat-lbl">${wl ? `из цели −${S.settings.goalLossKg}` : 'внеси вес'}</div></div>
-    <div class="stat">${icon('route')}<div class="stat-val">${dec(weekKm)}<small> км</small></div><div class="stat-lbl">за неделю · ${dec(monthKm)} за месяц</div></div>
+    <button class="stat" data-a="goal-go" data-v="visits" aria-label="Визиты в клуб: открыть календарь">${icon('dumbbell')}<span class="stat-go">${go}</span><div class="stat-val">${vc.month}</div><div class="stat-lbl">визитов за ${MONTHS[Number(t.slice(5, 7)) - 1]}</div><div class="stat-mini">${vc.total ? `всего ${vc.total} с ${cy.fmtDate(vc.since)}` : 'первый впереди'}</div></button>
+    <button class="stat" data-a="weight-hub" aria-label="Вес: открыть график и записать вес">${icon('scale')}<span class="stat-go">${go}</span><div class="stat-val">${wl ? `${wl.lost > 0 ? '−' : wl.lost < 0 ? '+' : ''}${dec(Math.abs(wl.lost))}` : '—'}<small> кг</small></div><div class="stat-lbl">${wl ? `из цели −${S.settings.goalLossKg}` : 'внеси первый вес'}</div><div class="stat-mini">${wl ? `сейчас ${dec(wl.cur)} кг` : 'нажми и запиши'}</div></button>
+    <button class="stat" data-a="goal-go" data-v="walk" aria-label="Ходьба: открыть график">${icon('route')}<span class="stat-go">${go}</span><div class="stat-val">${fmtN(wk.day.steps)}</div><div class="stat-lbl">шагов сегодня · ${dec(wk.day.km)} км</div><div class="stat-mini">неделя ${dec(wk.week.km, 0)} · месяц ${dec(wk.month.km, 0)} км</div></button>
   </section>`);
   parts.push(`<section class="card"><h2>Путь к цели</h2>${goalRows()}</section>`);
 
   const allDone = dayDone(t);
   parts.push(`<h2 class="section-title">Сегодня <button class="btn-link" data-a="day" data-v="${t}">Изменить план</button></h2>${dayItemsHtml(t)}${allDone ? '<p class="done-note">День засчитан — так держать!</p>' : ''}`);
   parts.push(`<h2 class="section-title">Неделя <button class="btn-link" data-a="tab" data-v="calendar">План</button></h2>${weekStrip(ws)}`);
+  parts.push(backupCard());
   return parts.join('');
+}
+
+// ---------- копия данных ----------
+const BACKUP_WHERE = {
+  share: 'Ты сохраняла через окно «Поделиться». Если выбирала «Сохранить в Файлы» — открой приложение «Файлы» и зайди в ту папку, которую выбрала.',
+  download: 'Файл скачан на телефон: приложение «Файлы» → «Загрузки» (на iPhone — раздел «На iPhone» или iCloud Drive).',
+};
+const backupStatusText = (st, s) => {
+  const when = s.lastBackupAt ? cy.fmtDate(s.lastBackupAt.slice(0, 10)) : '';
+  if (st.level === 'ok') return `Последняя копия: ${when}${st.days ? ` (${st.days} дн. назад)` : ' — сегодня'}.`;
+  if (st.level === 'old') return `Последняя копия была ${st.days} дн. назад (${when}). Пора обновить.`;
+  if (st.level === 'stale') return `Копии не было уже ${st.days} дн. (последняя ${when}). Если с телефоном что-то случится, потеряются все записи за это время.`;
+  if (st.level === 'none') return 'Копии ещё не было, а записей уже много. Если телефон потеряется или приложение сбросится, всё пропадёт.';
+  return 'Все данные хранятся только на этом телефоне. Раз в пару недель сохраняй копию.';
+};
+// Где лежит последняя копия — показываем всегда, чтобы не искать
+export function backupWhereHtml(s) {
+  if (!s.lastBackupAt || !s.lastBackupName) return '';
+  return `<p class="backup-where"><b>Файл:</b> ${esc(s.lastBackupName)}<br>${esc(BACKUP_WHERE[s.lastBackupHow] || BACKUP_WHERE.share)}</p>`;
+}
+const BACKUP_HINT = 'В окне iPhone выбери «Сохранить в Файлы» → iCloud Drive → папка «Тренировки» (создай один раз). Так копия переживёт и потерю телефона.';
+
+function backupCard() {
+  const s = S.settings;
+  const st = ST.backupStatus(s.lastBackupAt, cy.today(), S.sessions.length + S.measurements.length + S.activities.length);
+  const warn = ['old', 'stale', 'none'].includes(st.level);
+  return `<section class="card backup-card ${warn ? `is-warn is-${st.level}` : ''}"><h2>${warn ? `${icon('clock', { size: 20 })} ` : ''}Копия данных</h2>
+    <p>${esc(backupStatusText(st, s))}</p>${backupWhereHtml(s)}
+    ${btn('Сохранить копию', 'export', { cls: warn ? 'btn-primary' : 'btn-secondary' })}
+    <p class="note">${esc(BACKUP_HINT)}</p></section>`;
 }
 
 // ---------- план ----------
@@ -260,20 +296,27 @@ function typesCard(title, from, to) {
     <p class="sub">Всего: ${hm(total)} движения</p></section>`;
 }
 
+// Сетка месяца: цвет — сколько всего активности за день (зал, ходьба, дом), подпись — часы, кольцо — был в клубе
+function calGrid(first, last, t) {
+  const visits = new Set(ST.clubVisitDates());
+  const cells = [];
+  for (let i = 0; i < cy.weekday(first) - 1; i++) cells.push('<span class="cell blank"></span>');
+  for (let d = first; d <= last; d = cy.addDays(d, 1)) {
+    const min = d <= t ? ST.dayMinutes(d) : 0;
+    const label = `${cy.fmtDate(d)}: ${min ? `${hm(min)} активности` : 'нет активности'}${visits.has(d) ? ', был в клубе' : ''}`;
+    cells.push(`<button class="cell l${ST.level(min)} ${d === t ? 'is-today' : ''} ${d > t ? 'is-future' : ''} ${visits.has(d) ? 'is-visit' : ''}" data-a="day" data-v="${d}" aria-label="${esc(label)}"><b>${dayNum(d)}</b><small>${ST.hoursShortText(min)}</small></button>`);
+  }
+  const head = WD.slice(1).map((w) => `<span class="hd">${w}</span>`).join('');
+  const legend = `<div class="heat-legend">меньше ${[1, 2, 3, 4, 5].map((l) => `<i style="background:var(--heat-${l})"></i>`).join('')} больше · до 30 мин → 3+ часа</div><div class="heat-legend"><span class="visit-dot"></span> был в клубе · под числом — часы за день</div>`;
+  return `<div class="heat">${head}${cells.join('')}</div>${legend}`;
+}
+
 function monthView() {
   const t = cy.today();
   const base = cy.parse(`${t.slice(0, 8)}01`);
   base.setMonth(base.getMonth() + S.cal.month);
   const first = cy.isoDate(base);
   const last = cy.isoDate(new Date(base.getFullYear(), base.getMonth() + 1, 0));
-  const lead = cy.weekday(first) - 1;
-  const cells = [];
-  for (let i = 0; i < lead; i++) cells.push('<span class="cell blank"></span>');
-  for (let d = first; d <= last; d = cy.addDays(d, 1)) {
-    const min = d <= t ? ST.dayMinutes(d) : 0;
-    const lvl = ST.level(min);
-    cells.push(`<button class="cell l${lvl} ${d === t ? 'is-today' : ''} ${d > t ? 'is-future' : ''}" data-a="day" data-v="${d}" aria-label="${esc(`${cy.fmtDate(d)}: ${min ? `${min} мин активности` : 'нет активности'}`)}">${dayNum(d)}</button>`);
-  }
   const to = last < t ? last : t;
   const active = first <= t;
   const sum = (fn) => (active ? ST.sumRange(fn, first, to) : 0);
@@ -302,8 +345,7 @@ function monthView() {
   }
   const monthName = `${MONTHS[base.getMonth()]} ${base.getFullYear()}`;
   return `<div class="nav-row"><button class="icon-btn" data-a="cal-nav" data-v="-1" aria-label="Предыдущий месяц">${icon('chevL')}</button><div class="nav-title">${esc(cy.capitalize(monthName))}</div><button class="icon-btn" data-a="cal-nav" data-v="1" aria-label="Следующий месяц">${icon('chevR')}</button></div>
-    <section class="card"><div class="heat">${WD.slice(1).map((w) => `<span class="hd">${w}</span>`).join('')}${cells.join('')}</div>
-      <div class="heat-legend">меньше ${[1, 2, 3, 4, 5].map((l) => `<i style="background:var(--heat-${l})"></i>`).join('')} больше · до 30 мин → 3+ часа</div></section>
+    <section class="card">${calGrid(first, last, t)}</section>
     <section class="card"><h2>Итоги месяца</h2><div class="kpis">
       <div class="kpi"><b>${activeDays} из ${days}</b><span>активных дней</span></div>
       <div class="kpi"><b>${clubDays}</b><span>визитов в клуб</span></div>
@@ -337,19 +379,99 @@ export function renderCalendar() {
 }
 
 // ---------- цели и прогресс ----------
-export function renderGoals() {
+// График веса и список записей — и в «Целях», и в окне на главной
+export function weightBlockHtml(recordsOpen = false) {
   const start = S.settings.startDate;
   const end = cy.addDays(start, 90);
   const w = ST.weights();
-  const wl = ST.weightLoss();
   const from = [w[0] && w[0].date, cy.addDays(start, -3)].filter(Boolean).sort()[0];
   const total = cy.daysBetween(from, end);
   const X = (d) => cy.daysBetween(from, d) / total;
   const xLabels = [from, cy.addDays(start, 28), cy.addDays(start, 56), end].map((d) => ({ x: X(d), label: cy.fmtShort(d).slice(3) }));
-  const weightChart = w.length
+  const chart = w.length
     ? lineChart(w.map((m) => ({ x: X(m.date), y: m.weightKg, muted: m.premenstrual, label: `${cy.fmtShort(m.date)}: ${dec(m.weightKg)} кг${m.premenstrual ? ' (непоказательно)' : ''}` })),
       { target: [{ x: X(w[0].date), y: w[0].weightKg }, { x: 1, y: w[0].weightKg - S.settings.goalLossKg }], xLabels })
     : '<p class="note">Пока нет записей веса.</p>';
+  return `${chart}<div class="legend-inline"><span><i style="background:var(--sage)"></i>факт</span><span><i style="background:var(--coral)"></i>план к цели</span></div>
+    ${w.length ? `<details class="classes" ${recordsOpen ? 'open' : ''}><summary>Записи веса · ${w.length}</summary>${[...w].reverse().slice(0, 10).map((m) => `<div class="row-btn"><b>${cy.fmtShort(m.date)}${m.premenstrual ? ' · непоказательно' : ''}</b><span>${dec(m.weightKg)} кг</span><button class="btn-link danger-link" data-a="del-weight" data-v="${m.id}">Удалить</button></div>`).join('')}</details>` : ''}`;
+}
+
+// Окно «Вес»: сверху быстрая запись, ниже график
+export function renderWeightHub(o) {
+  return `<div class="sheet-head"><h2>Вес</h2><button class="icon-btn" data-a="close" aria-label="Закрыть">${icon('x')}</button></div>
+    <p class="sub">Запиши вес сегодня — утром, натощак. В графике считается средняя за неделю.</p>
+    <div class="stepper"><button data-a="wt" data-v="-0.1" aria-label="Меньше">−</button><div class="val">${dec(o.value)} кг</div><button data-a="wt" data-v="0.1" aria-label="Больше">+</button></div>
+    <div class="row2">${btn('−1 кг', 'wt', { v: '-1' })}${btn('+1 кг', 'wt', { v: '1' })}</div>
+    <label class="check"><input type="checkbox" data-f="wt-pm" ${o.pm ? 'checked' : ''}> Предменструальные дни</label>
+    ${btn(o.saved ? 'Записано ✓ — записать ещё раз' : 'Записать вес', 'wt-save', { cls: 'btn-primary btn-xl' })}
+    <h3 class="sheet-sub">Изменение веса</h3>${weightBlockHtml(true)}
+    ${btn('Открыть в «Целях»', 'goal-go', { v: 'weight', cls: 'btn-link' })}`;
+}
+
+// Календарь в «Целях»: свой месяц, не зависит от вкладки «План»
+function goalCalendar() {
+  const t = cy.today();
+  const base = cy.parse(`${t.slice(0, 8)}01`);
+  base.setMonth(base.getMonth() + (S.cal.gmonth || 0));
+  const first = cy.isoDate(base);
+  const last = cy.isoDate(new Date(base.getFullYear(), base.getMonth() + 1, 0));
+  const to = last < t ? last : t;
+  const active = first <= t;
+  let minutes = 0;
+  let activeDays = 0;
+  for (let d = first; active && d <= to; d = cy.addDays(d, 1)) { const m = ST.dayMinutes(d); minutes += m; if (m > 0) activeDays++; }
+  const clubDays = ST.clubVisitDates().filter((d) => d >= first && d <= last).length;
+  const name = cy.capitalize(`${MONTHS[base.getMonth()]} ${base.getFullYear()}`);
+  return `<section class="card" id="g-visits"><h2>Календарь занятий</h2>
+    <p class="sub">Тапни день, чтобы отметить посещение клуба, групповое занятие, бассейн, прогулку или домашнюю тренировку. В часах — всё за день вместе: зал, ходьба и дом.</p>
+    <div class="nav-row"><button class="icon-btn" data-a="gcal-nav" data-v="-1" aria-label="Предыдущий месяц">${icon('chevL')}</button><div class="nav-title">${esc(name)}</div><button class="icon-btn" data-a="gcal-nav" data-v="1" aria-label="Следующий месяц">${icon('chevR')}</button></div>
+    ${calGrid(first, last, t)}
+    <div class="kpis k3"><div class="kpi"><b>${clubDays}</b><span>визитов в клуб</span></div><div class="kpi"><b>${activeDays}</b><span>активных дней</span></div><div class="kpi"><b>${hm(Math.round(minutes))}</b><span>активности всего</span></div></div></section>`;
+}
+
+// Ходьба: сводка, график по дням/неделям с планом, шаги из Здоровья и ручная правка — одним блоком
+function walkBlock() {
+  const t = cy.today();
+  const mode = S.ui.walkMode || 'days';
+  const unit = S.ui.walkUnit || 'steps';
+  const wk = ST.walkTotals(t);
+  const phase = (d) => cy.phaseOf(cy.weekOf(d, S.settings.startDate, S.settings.shifts));
+  const goalDay = (d) => P.stepsGoalForPhase(phase(d));
+  const val = (x) => (unit === 'km' ? x.km : x.steps);
+  const planOf = (steps) => (unit === 'km' ? steps / ST.STEPS_PER_KM : steps);
+  const fmt = unit === 'km' ? (v) => dec(v, 1) : (v) => dec(v / 1000, 1);
+  const items = mode === 'days'
+    ? ST.stepsByDay(t, 14).map((x) => ({ label: String(dayNum(x.date)), value: val(x), plan: planOf(goalDay(x.date)), current: x.date === t, title: `${cy.fmtShort(x.date)}: ${fmtN(x.steps)} шагов · ${dec(x.km)} км (план ${fmtN(goalDay(x.date))})` }))
+    : ST.stepsByWeek(t, 8).map((x) => ({ label: `${dayNum(x.ws)}.${x.ws.slice(5, 7)}`, value: val(x), plan: planOf(goalDay(x.ws) * 7), current: x.ws === cy.weekStart(t), title: `неделя с ${cy.fmtShort(x.ws)}: ${fmtN(x.steps)} шагов · ${dec(x.km)} км` }));
+  const chart = barChart(items, { fmt, height: 170 });
+  const gd = goalDay(t);
+  const hi = ST.healthInfo();
+  const last7 = ST.stepsByDay(t, 7).reverse();
+  const srcOf = (d) => (S.health[d] ? (S.health[d].source === 'manual' ? 'вручную' : 'Здоровье') : 'по прогулкам');
+  return `<section class="card" id="g-walk"><h2>Ходьба</h2>
+    <div class="kpis k3"><div class="kpi"><b>${fmtN(wk.day.steps)}</b><span>сегодня, шагов<br>${dec(wk.day.km)} км · план ${fmtN(gd)}</span></div>
+      <div class="kpi"><b>${fmtN(wk.week.steps)}</b><span>за неделю<br>${dec(wk.week.km)} км · план ${fmtN(gd * 7)}</span></div>
+      <div class="kpi"><b>${fmtN(wk.month.steps)}</b><span>за месяц<br>${dec(wk.month.km, 0)} км</span></div></div>
+    <div class="seg" role="group"><button data-a="walk-mode" data-v="days" aria-pressed="${mode === 'days'}">По дням</button><button data-a="walk-mode" data-v="weeks" aria-pressed="${mode === 'weeks'}">По неделям</button></div>
+    <div class="chips">${chip('Шаги, тыс.', 'walk-unit', 'steps', unit === 'steps')}${chip('Километры', 'walk-unit', 'km', unit === 'km')}</div>
+    ${chart}<div class="legend-inline"><span><i style="background:var(--sage)"></i>факт</span><span><i class="plan-key"></i>план${mode === 'weeks' ? ' на неделю' : ' на день'}</span></div>
+    <h3 class="sheet-sub">Шаги из Apple Здоровья</h3>
+    <p class="sub">${hi.count ? `Загружено из Здоровья: ${hi.count} дн., последний — ${cy.fmtShort(hi.last)}.` : 'Из Здоровья пока ничего не загружено.'} Что ты внесла вручную, повторная загрузка не перезапишет.</p>
+    <div class="grid2">${btn(`${icon('heart', { size: 18 })} Вставить из буфера`, 'health-paste')}${btn(`${icon('plus', { size: 18 })} Ввести за сегодня`, 'km-edit', { v: t })}</div>
+    <h3 class="sheet-sub">Последние 7 дней · тапни, чтобы поправить</h3>
+    ${last7.map((x) => `<button class="row-btn" data-a="km-edit" data-v="${x.date}"><b>${esc(cy.capitalize(cy.fmtDate(x.date, true)))}</b><span>${x.steps ? `${fmtN(x.steps)} шагов · ${dec(x.km)} км · ${srcOf(x.date)}` : 'нет данных — тапни, чтобы ввести'}</span></button>`).join('')}
+    ${HEALTH_HELP}</section>`;
+}
+
+export function renderGoals() {
+  const start = S.settings.startDate;
+  const end = cy.addDays(start, 90);
+  const wl = ST.weightLoss();
+  const w = ST.weights();
+  const from = [w[0] && w[0].date, cy.addDays(start, -3)].filter(Boolean).sort()[0];
+  const total = cy.daysBetween(from, end);
+  const X = (d) => cy.daysBetween(from, d) / total;
+  const xLabels = [from, cy.addDays(start, 28), cy.addDays(start, 56), end].map((d) => ({ x: X(d), label: cy.fmtShort(d).slice(3) }));
   const waist = S.measurements.filter((m) => m.waistCm != null).sort((a, b) => a.date.localeCompare(b.date));
   const waistChart = waist.length
     ? lineChart(waist.map((m) => ({ x: X(m.date), y: m.waistCm, muted: m.premenstrual, label: `${cy.fmtShort(m.date)}: ${dec(m.waistCm)} см` })), { target: [{ x: X(waist[0].date), y: waist[0].waistCm }, { x: 1, y: waist[0].waistCm - 3 }], xLabels })
@@ -369,16 +491,28 @@ export function renderGoals() {
     <section class="card"><h2>Мои цели к ${cy.fmtDate(end)}</h2>
       <ul class="list"><li>Минус ${S.settings.goalLossKg} кг жира${wl && wl.lost > 0 ? ` · уже −${dec(wl.lost)}` : ''}</li><li>Минус 2–4 см на талии</li><li>3 визита в клуб в неделю</li><li>Шаги: 7–8 тыс. → 9–10 тыс. в день</li></ul>
       ${goalRows()}</section>
-    <div class="grid2">${btn(`${icon('scale', { size: 18 })} Вес`, 'weight-open')}${btn(`${icon('plus', { size: 18 })} Замер`, 'go', { v: 'measure' })}${btn(`${icon('heart', { size: 18 })} Шаги из Здоровья`, 'health-paste')}${btn(`${icon('walk', { size: 18 })} Активность`, 'go', { v: 'homeLog' })}${btn(`${icon('video', { size: 18 })} Мои видео`, 'go', { v: 'videos' })}</div>
-    <section class="card"><h2>Вес, кг</h2>${weightChart}<div class="legend-inline"><span><i style="background:var(--sage)"></i>факт</span><span><i style="background:var(--coral)"></i>план к цели</span></div>
-      ${w.length ? `<details class="classes"><summary>Записи веса · ${w.length}</summary>${[...w].reverse().slice(0, 10).map((m) => `<div class="row-btn"><b>${cy.fmtShort(m.date)}${m.premenstrual ? ' · непоказательно' : ''}</b><span>${dec(m.weightKg)} кг</span><button class="btn-link danger-link" data-a="del-weight" data-v="${m.id}">Удалить</button></div>`).join('')}</details>` : ''}</section>
-    <section class="card"><h2>Талия, см</h2>${waistChart}</section>
+    <div class="grid2">${btn(`${icon('scale', { size: 18 })} Вес`, 'weight-open')}${btn(`${icon('plus', { size: 18 })} Замер`, 'go', { v: 'measure' })}${btn(`${icon('walk', { size: 18 })} Активность`, 'go', { v: 'homeLog' })}${btn(`${icon('video', { size: 18 })} Мои видео`, 'go', { v: 'videos' })}</div>
+    ${goalCalendar()}
     <section class="card"><h2>Визиты в клуб по неделям</h2>${barChart(weeks.map((x) => ({ label: x.label, value: x.club, current: x.current })), { goal: 3 })}</section>
-    <section class="card"><h2>Километры по неделям</h2>${barChart(weeks.map((x) => ({ label: x.label, value: x.km, current: x.current })), { fmt: (v) => dec(v, 0) })}</section>
+    <section class="card" id="g-weight"><h2>Вес, кг</h2>
+      <div class="grid2">${btn(`${icon('plus', { size: 18 })} Добавить вес`, 'weight-open', { cls: 'btn-primary' })}</div>
+      ${weightBlockHtml()}</section>
+    ${walkBlock()}
+    <section class="card"><h2>Талия, см</h2>${waistChart}</section>
     <section class="card"><h2>Замеры</h2>${measures.length ? measures.map((m) => `<div class="row-btn"><b>${cy.fmtShort(m.date)}${m.checkpoint != null ? ` · контрольный ${m.checkpoint}` : ''}${m.premenstrual ? ' · непоказательно' : ''}</b><span>${CIRC.filter(([k]) => m[k] != null).map(([k, l]) => `${l} ${dec(m[k])}`).join(' · ')}</span><button class="btn-link danger-link" data-a="del-measure" data-v="${m.id}">Удалить</button></div>`).join('') : '<p class="note">Пока пусто.</p>'}</section>`;
 }
 
 // ---------- настройки ----------
+const HEALTH_HELP = `<details class="classes"><summary>Как сделать Команду (10 минут, один раз)</summary><ol class="list">
+        <li>Открой «Команды» → «+» → назови «Тренировки: шаги».</li>
+        <li>«Найти образцы здоровья»: тип «Шаги», «Дата начала» — «за последние 30 дней», «Группировать по» — «День».</li>
+        <li>«Повторить с каждым»: внутри — «Текст»: <code>S;</code> + «Дата начала» повторяемого объекта в формате <code>yyyy-MM-dd</code> + <code>;</code> + «Значение».</li>
+        <li>Ещё раз «Найти образцы здоровья»: «Расстояние ходьбы и бега», последние 30 дней, по дням → «Повторить с каждым» → «Текст»: <code>K;</code> + дата + <code>;</code> + значение.</li>
+        <li>После обоих циклов: «Объединить текст» (разделитель — новая строка) → «Скопировать в буфер обмена».</li>
+        <li>По желанию: «Автоматизация» → «Время суток» 21:30 → эта Команда.</li>
+        <li>Потом в приложении: «Цели» → «Шаги из Здоровья».</li></ol>
+        <p class="note">Названия действий могут немного отличаться в разных версиях iOS. Подходит и старый формат одной строкой: <code>TR;2026-10-25;8123;5,4</code>. Шаги из Здоровья важнее ручной оценки, но если поправишь километры вручную — останется твоя цифра.</p></details>`;
+
 export function renderSettings() {
   const s = S.settings;
   return `<header class="page-title"><button class="icon-btn" data-a="go" data-v="back" aria-label="Назад">${icon('back')}</button><h1>Настройки</h1></header>
@@ -391,21 +525,10 @@ export function renderSettings() {
       ${btn('Проверить звук и голос', 'test-sound')}
       <p class="note">На iPhone выключи беззвучный режим (переключатель сбоку) — иначе сигналов таймера может не быть.${hasRuVoice() ? '' : ' Русский голос не найден: скачай в Настройки iPhone → Универсальный доступ → Устный контент → Голоса.'}</p></section>
     <section class="card"><h2>Мои видео</h2><p>Ссылки на видео-тренировки и йогу из Telegram и YouTube, с проверкой на опасные упражнения. ${S.videos.length ? `Сейчас: ${S.videos.length}.` : ''}</p>${btn('Открыть библиотеку', 'go', { v: 'videos' })}</section>
-    <section class="card"><h2>Шаги из Apple Здоровья</h2>
-      <p>Веб-приложение не может читать Здоровье напрямую, поэтому шаги передаёт «Команда» iPhone через буфер обмена.</p>
-      <p>Здоровье хранит всю историю шагов, поэтому Команда может забрать сразу прошедшие дни — например, последние 30. Повторные загрузки просто обновят цифры.</p>
-      <details class="classes"><summary>Как сделать Команду (10 минут, один раз)</summary><ol class="list">
-        <li>Открой «Команды» → «+» → назови «Тренировки: шаги».</li>
-        <li>«Найти образцы здоровья»: тип «Шаги», «Дата начала» — «за последние 30 дней», «Группировать по» — «День».</li>
-        <li>«Повторить с каждым»: внутри — «Текст»: <code>S;</code> + «Дата начала» повторяемого объекта в формате <code>yyyy-MM-dd</code> + <code>;</code> + «Значение».</li>
-        <li>Ещё раз «Найти образцы здоровья»: «Расстояние ходьбы и бега», последние 30 дней, по дням → «Повторить с каждым» → «Текст»: <code>K;</code> + дата + <code>;</code> + значение.</li>
-        <li>После обоих циклов: «Объединить текст» (разделитель — новая строка) → «Скопировать в буфер обмена».</li>
-        <li>По желанию: «Автоматизация» → «Время суток» 21:30 → эта Команда.</li>
-        <li>Потом в приложении: «Цели» → «Шаги из Здоровья».</li></ol>
-        <p class="note">Названия действий могут немного отличаться в разных версиях iOS. Подходит и старый формат одной строкой: <code>TR;2026-10-25;8123;5,4</code>. Шаги из Здоровья важнее ручной оценки, но если поправишь километры вручную — останется твоя цифра.</p></details>
-      ${btn('Вставить шаги из буфера', 'health-paste')}</section>
-    <section class="card"><h2>Копия данных</h2><p>Всё хранится только на этом телефоне. ${s.lastBackupAt ? `Последняя копия: ${cy.fmtDate(s.lastBackupAt.slice(0, 10))}.` : 'Копий ещё не было.'}</p>
+    <section class="card"><h2>Шаги из Apple Здоровья</h2><p>Загрузка из Здоровья, правка шагов и км, как настроить «Команду» — теперь в одном блоке «Ходьба» на экране «Цели».</p>${btn('Открыть блок «Ходьба»', 'goal-go', { v: 'walk' })}</section>
+    <section class="card"><h2>Копия данных</h2><p>${esc(backupStatusText(ST.backupStatus(s.lastBackupAt, cy.today(), S.sessions.length + S.measurements.length + S.activities.length), s))}</p>${backupWhereHtml(s)}
       ${btn('Сохранить копию', 'export', { cls: 'btn-primary' })}
+      <p class="note">${esc(BACKUP_HINT)}</p>
       <label class="btn btn-secondary file-btn">Загрузить из копии<input type="file" accept="application/json,.json" data-f="import" hidden></label></section>
     ${btn('Стереть все данные', 'reset', { cls: 'btn-link danger-link' })}
     <p class="note center">Версия ${self.APP_VERSION || '?'} от ${self.APP_DATE || '?'} · ${S.sessions.length} тренировок · ${S.activities.length} активностей · ${S.measurements.length} замеров</p>`;
@@ -430,9 +553,6 @@ export function renderDaySheet(date) {
     }
   }
   parts.push(`<div style="margin-top:12px">${dayItemsHtml(date)}</div>`);
-  if (date <= t) {
-    parts.push(`<p class="sub" style="margin-top:12px">Ходьба: <b>${dec(ST.dayKm(date))} км</b> · ${ST.daySteps(date).toLocaleString('ru-RU')} шагов (${esc(ST.kmSource(date))}) ${canEdit ? '<button class="btn-link" data-a="km-edit" data-v="' + date + '">Изменить</button>' : ''}</p>`);
-  }
   parts.push(btn('Готово', 'close', { cls: 'btn-primary btn-xl' }));
   if (planEditable && !d.cancelled) parts.push(btn(`${icon('ban', { size: 18 })} Отменить день (болею, поездка…)`, 'day-cancel', { v: date, cls: 'btn-link' }));
   if (!canEdit) parts.push('<p class="note">Отмечать можно не дальше чем на 7 дней назад.</p>');

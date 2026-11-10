@@ -562,15 +562,22 @@ function renderOverlay() {
       ${o.id ? btn('Убрать отметку', 'act-del', { cls: 'btn-link danger-link' }) : btn('Отмена', 'act-back', { cls: 'btn-link' })}`;
   }
   else if (o.type === 'steps') {
-    inner = `<div class="sheet-head"><h2>Ходьба · ${esc(cy.fmtDate(o.date))}</h2><button class="icon-btn" data-a="day" data-v="${o.date}" aria-label="Закрыть">${icon('x')}</button></div>
+    inner = `<div class="sheet-head"><h2>Ходьба · ${esc(cy.fmtDate(o.date))}</h2><button class="icon-btn" data-a="${o.fromSheet ? 'day' : 'close'}" data-v="${o.date}" aria-label="Закрыть">${icon('x')}</button></div>
       <p class="sub">Впиши шаги или километры — второе число посчитается само (примерно ${ST.STEPS_PER_KM} шагов в километре).</p>
       <label class="field">Шаги<input type="text" inputmode="numeric" data-f="steps-val" value="${Math.round(o.steps)}"></label>
       <label class="field">Километры<input type="text" inputmode="decimal" data-f="steps-km" value="${dec(o.km, 2)}"></label>
       ${P.effective(o.date, S.plan).type === 'home' && !P.effective(o.date, S.plan).cancelled ? '<p class="note">На домашнем дне шаги засчитаются как прогулка.</p>' : ''}
-      ${btn('Сохранить', 'steps-save', { cls: 'btn-primary btn-xl' })}${btn('Отмена', 'day', { v: o.date, cls: 'btn-link' })}`;
+      ${btn('Сохранить', 'steps-save', { cls: 'btn-primary btn-xl' })}${btn('Отмена', o.fromSheet ? 'day' : 'close', { v: o.date, cls: 'btn-link' })}`;
   }
   else if (o.type === 'videoPick') inner = V.renderVideoPick(o.date, o.kind);
-  else if (o.type === 'weight') {
+  else if (o.type === 'weightHub') inner = V.renderWeightHub(o);
+  else if (o.type === 'backupDone') {
+    inner = `<div class="sheet-head"><h2>Копия сохранена</h2><button class="icon-btn" data-a="close" aria-label="Закрыть">${icon('x')}</button></div>
+      <p class="lead"><b>Файл:</b> ${esc(o.name)}</p>
+      <p>${o.how === 'download' ? 'Файл скачан на телефон: приложение «Файлы» → «Загрузки» (на iPhone — раздел «На iPhone» или iCloud Drive).' : 'Ты выбрала место в окне «Поделиться». Если это «Сохранить в Файлы» — открой приложение «Файлы» и зайди в ту папку, которую выбрала.'}</p>
+      <p class="note">Название и подсказка остаются внизу главного экрана, чтобы копию было легко найти.</p>
+      ${btn('Понятно', 'close', { cls: 'btn-primary btn-xl' })}`;
+  } else if (o.type === 'weight') {
     inner = `<div class="sheet-head"><h2>Вес сегодня</h2><button class="icon-btn" data-a="close" aria-label="Закрыть">${icon('x')}</button></div>
       <p class="sub">Утром, натощак. В графике считается средняя за неделю.</p>
       <div class="stepper"><button data-a="wt" data-v="-0.1" aria-label="Меньше">−</button><div class="val">${dec(o.value)} кг</div><button data-a="wt" data-v="0.1" aria-label="Больше">+</button></div>
@@ -614,6 +621,11 @@ function go(screen) {
   if (!['measure', 'homeLog', 'videoForm', 'videoImport'].includes(screen)) S.form = {};
   window.scrollTo(0, 0);
   render();
+  if (S.focus) {
+    const el = document.getElementById(S.focus);
+    S.focus = null;
+    if (el) el.scrollIntoView({ block: 'start' });
+  }
 }
 
 function renderMain() {
@@ -638,6 +650,16 @@ const A = {
     go(v);
   },
   close: () => { S.overlay = null; render(); },
+  // плашки главной: переход в нужный блок «Целей»
+  'goal-go': (v) => { prevScreen = 'goals'; S.focus = `g-${v}`; if (v === 'visits') S.cal.gmonth = 0; go('goals'); },
+  'weight-hub': () => {
+    const w = ST.weights();
+    S.overlay = { type: 'weightHub', value: w.length ? w[w.length - 1].weightKg : 68, pm: false };
+    render();
+  },
+  'gcal-nav': (v) => { S.cal.gmonth = (S.cal.gmonth || 0) + Number(v); render(); },
+  'walk-mode': (v) => { S.ui.walkMode = v; render(); },
+  'walk-unit': (v) => { S.ui.walkUnit = v; render(); },
   'overlay-bg': (v, el, e) => { if (e.target === el) A.close(); },
   day: (v) => { S.overlay = { type: 'day', date: v }; render(); },
 
@@ -733,7 +755,7 @@ const A = {
     await db.put('sessions', rec); S.sessions.push(rec); refresh();
   },
   // ходьба за день: шаги и км, одно пересчитывается в другое
-  'km-edit': (v) => { S.overlay = { type: 'steps', date: v, steps: ST.daySteps(v), km: +ST.dayKm(v).toFixed(2) }; render(); },
+  'km-edit': (v) => { S.overlay = { type: 'steps', date: v, steps: Math.round(ST.daySteps(v)), km: +ST.dayKm(v).toFixed(2), fromSheet: !!(S.overlay && S.overlay.type === 'day') }; render(); },
   'steps-save': async () => {
     const o = S.overlay;
     if (!(o.steps >= 0) || !(o.km >= 0)) { alert('Введи шаги или километры числом.'); return; }
@@ -750,7 +772,7 @@ const A = {
         else await removeActivity(own);
       }
     }
-    S.overlay = { type: 'day', date: o.date };
+    S.overlay = o.fromSheet ? { type: 'day', date: o.date } : null;
     refresh();
   },
   'health-paste': async () => {
@@ -841,7 +863,9 @@ const A = {
   wt: (v) => { S.overlay.value = Math.max(30, +(S.overlay.value + Number(v)).toFixed(1)); render(); },
   'wt-save': async () => {
     const rec = { id: uid(), cycleId: 'c1', date: cy.today(), at: nowISO(), checkpoint: null, weightKg: S.overlay.value, premenstrual: !!S.overlay.pm };
-    await db.put('measurements', rec); S.measurements.push(rec); S.overlay = null; refresh();
+    await db.put('measurements', rec); S.measurements.push(rec);
+    S.overlay = S.overlay.type === 'weightHub' ? { ...S.overlay, saved: true } : null;
+    refresh();
   },
   // удалить запись веса; если в ней есть и замеры (старые записи), убирается только вес
   'del-weight': async (v) => {
@@ -1114,12 +1138,17 @@ async function doExport() {
   const payload = { schemaVersion: 2, app: 'trenirovki', exportedAt: nowISO(), ...data };
   const name = `trenirovki-${cy.today()}.json`;
   const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
-  const markDone = async () => { S.settings.lastBackupAt = nowISO(); await saveSettings(); render(); };
+  const markDone = async (how) => {
+    S.settings.lastBackupAt = nowISO(); S.settings.lastBackupName = name; S.settings.lastBackupHow = how;
+    await saveSettings();
+    S.overlay = { type: 'backupDone', name, how };
+    render();
+  };
   try {
     const file = new File([blob], name, { type: 'application/json' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       await navigator.share({ files: [file], title: name });
-      return markDone();
+      return markDone('share');
     }
   } catch (e) {
     if (e && e.name === 'AbortError') return;
@@ -1130,7 +1159,7 @@ async function doExport() {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  markDone();
+  markDone('download');
 }
 
 // Уменьшает фото с камеры до ~1200 px, чтобы не занимать память телефона

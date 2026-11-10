@@ -20,6 +20,6 @@ export const S = {
   overlay: null,
   ui: {},
   form: {},
-  cal: { mode: 'week', week: 0, month: 0 },
+  cal: { mode: 'week', week: 0, month: 0, gmonth: 0 },  // gmonth — месяц календаря в «Целях»
   preferSlot: null,
 };

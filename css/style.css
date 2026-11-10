@@ -399,3 +399,26 @@ legend { font-weight: 650; margin-bottom: 6px; padding: 0; }
 .sheet::before { content: ""; display: block; width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 0 auto 10px; }
 .sheet-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .sheet-head h2 { flex: 1; margin: 0; }
+
+/* ---- версия 18: плашки-кнопки, календарь с часами, ходьба, копия данных ---- */
+button.stat { font: inherit; color: inherit; text-align: left; cursor: pointer; position: relative; width: 100%; -webkit-tap-highlight-color: transparent; }
+button.stat:active { transform: scale(.98); }
+.stat-go { position: absolute; right: 8px; top: 10px; color: var(--text-2); opacity: .6; display: inline-flex; }
+.stat-mini { font-size: .72rem; color: var(--text-2); opacity: .9; margin-top: 3px; line-height: 1.25; }
+.heat .cell { flex-direction: column; gap: 1px; position: relative; }
+.heat .cell b { font-size: .85rem; line-height: 1; font-weight: 650; }
+.heat .cell small { font-size: .6rem; font-weight: 500; line-height: 1; min-height: .62rem; }
+.heat .cell.is-visit::after { content: ''; position: absolute; top: 4px; right: 4px; width: 7px; height: 7px; border-radius: 50%; background: var(--coral); box-shadow: 0 0 0 1.5px var(--surface); }
+.visit-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--coral); vertical-align: -1px; }
+.sheet-sub { font-size: 1rem; margin: 18px 0 6px; }
+.walkbar { height: 6px; border-radius: 3px; background: var(--line); margin-top: 7px; overflow: hidden; }
+.walkbar i { display: block; height: 100%; background: var(--sage); border-radius: 3px; }
+.plan-key { display: inline-block; width: 14px; height: 0; border-top: 3px solid var(--coral); margin-right: 5px; vertical-align: 3px; }
+.chart .plan-mark { stroke: var(--coral); stroke-width: 2.5; stroke-linecap: round; }
+.backup-card.is-warn { border: 2px solid var(--coral); background: var(--warn-bg); }
+.backup-card h2 { display: flex; align-items: center; gap: 6px; }
+.backup-where { background: var(--surface-2); border-radius: 12px; padding: 10px 12px; font-size: .9rem; margin: 8px 0; }
+.kpis.k3 { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.kpis.k3 .kpi { padding: 10px 8px; min-width: 0; }
+.kpis.k3 .kpi b { font-size: 1.1rem; white-space: nowrap; }
+.kpis.k3 .kpi span { font-size: .72rem; line-height: 1.3; }

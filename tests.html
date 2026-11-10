@@ -9,7 +9,7 @@
 import * as cy from './js/cycle.js';
 import { suggest } from './js/progression.js';
 import { programExercises, upcomingSwaps, aquaPlan } from './js/programs.js';
-import { parseHealth, stepsToKm, kmToSteps, walkSteps, sessionPoolMin, swimMinutesOn, clubVisitDates } from './js/stats.js';
+import { parseHealth, stepsToKm, kmToSteps, walkSteps, sessionPoolMin, swimMinutesOn, clubVisitDates, visitCounts, walkTotals, stepsByDay, stepsByWeek, healthInfo, hoursShortText, backupStatus } from './js/stats.js';
 import { S } from './js/state.js';
 
 const out = document.getElementById('out');
@@ -140,6 +140,66 @@ eq('бассейн за день: только отметка', swimMinutesOn('2
 eq('бассейн за день: нет', swimMinutesOn('2026-11-04'), 0);
 eq('визиты в клуб: бассейн и групповое считаются', clubVisitDates(), ['2026-11-01', '2026-11-02', '2026-11-03']);
 S.sessions = []; S.activities = [];
+
+// счётчики главной: визиты за месяц и всего
+S.sessions = [{ date: '2026-10-20', status: 'done' }, { date: '2026-10-29', status: 'partial' }, { date: '2026-11-03', status: 'done' }, { date: '2026-11-08', status: 'skip' }];
+S.activities = [{ date: '2026-11-05', kind: 'class' }, { date: '2026-11-09', kind: 'pool', minutes: 30 }, { date: '2026-11-04', kind: 'walk', distanceKm: 3 }];
+eq('визиты: за ноябрь', visitCounts('2026-11-09').month, 3);
+eq('визиты: всего', visitCounts('2026-11-09').total, 5);
+eq('визиты: с какой даты', visitCounts('2026-11-09').since, '2026-10-20');
+eq('визиты: пропущенная тренировка не считается', visitCounts('2026-11-09').total === 5 && !clubVisitDates().includes('2026-11-08'), true);
+eq('визиты: нет данных', (S.sessions = [], S.activities = [], visitCounts('2026-11-09')).total, 0);
+
+// ходьба: день / неделя (с понедельника) / месяц
+S.health = { '2026-11-09': { steps: 5400 }, '2026-11-08': { steps: 8100 }, '2026-11-03': { steps: 6750 }, '2026-10-31': { steps: 2700 } };
+const wk = walkTotals('2026-11-09');
+eq('ходьба: сегодня, шаги', wk.day.steps, 5400);
+eq('ходьба: сегодня, км', wk.day.km, 4);
+eq('ходьба: в понедельник неделя начинается заново', wk.week.steps, 5400);
+eq('ходьба: месяц без октября', wk.month.steps, 5400 + 8100 + 6750);
+S.health['2026-11-11'] = { steps: 1350 };
+const wk2 = walkTotals('2026-11-12');
+eq('ходьба: среда–четверг, неделя с понедельника', wk2.week.steps, 5400 + 1350);
+eq('ходьба: неделя в км', Math.round(wk2.week.km * 100) / 100, 5);
+delete S.health['2026-11-11'];
+eq('ходьба: 14 дней по дням', stepsByDay('2026-11-09', 14).length, 14);
+eq('ходьба: по дням — последний день сегодня', stepsByDay('2026-11-09', 14)[13].steps, 5400);
+eq('ходьба: по дням — 31.10 попал', stepsByDay('2026-11-09', 14).find((x) => x.date === '2026-10-31').steps, 2700);
+const wks = stepsByWeek('2026-11-09', 3);
+eq('ходьба: недели — три', wks.map((x) => x.ws), ['2026-10-26', '2026-11-02', '2026-11-09']);
+eq('ходьба: неделя 26.10–01.11', wks[0].steps, 2700);
+eq('ходьба: неделя 02–08.11 (с вс 08.11)', wks[1].steps, 8100 + 6750);
+eq('ходьба: текущая неделя', wks[2].steps, 5400);
+
+// здоровье и ручные записи
+S.health = { '2026-11-01': { steps: 1, source: 'manual' }, '2026-11-02': { steps: 2, source: 'health' }, '2026-11-05': { steps: 3 } };
+eq('здоровье: загружено дней', healthInfo().count, 2);
+eq('здоровье: последняя дата', healthInfo().last, '2026-11-05');
+S.health = {};
+
+// план шагов по фазе (старт цикла 2026-10-20: неделя 1–4 → 7500, 5–8 → 8500)
+const { stepsGoalOn, stepsGoalForPhase } = await import('./js/plan.js');
+eq('план шагов: освоение', stepsGoalOn('2026-11-09', '2026-10-20'), 7500);
+eq('план шагов: набор (неделя 5)', stepsGoalOn('2026-11-24', '2026-10-20'), 8500);
+eq('план шагов: закрепление', stepsGoalForPhase('p3'), 9500);
+eq('план шагов: неизвестная фаза', stepsGoalForPhase('xx'), 7500);
+
+// подписи календаря
+eq('часы: пусто', hoursShortText(0), '');
+eq('часы: 45м', hoursShortText(45), '45м');
+eq('часы: 2,5ч', hoursShortText(150), '2,5ч');
+eq('часы: 1ч', hoursShortText(60), '1ч');
+eq('часы: 3,3ч', hoursShortText(200), '3,3ч');
+
+// напоминание о копии данных
+eq('копия: пока рано напоминать', backupStatus(null, '2026-11-09', 2).level, 'new');
+eq('копия: записей много, копий не было', backupStatus(null, '2026-11-09', 5).level, 'none');
+eq('копия: свежая', backupStatus('2026-11-05T10:00:00Z', '2026-11-09', 50).level, 'ok');
+eq('копия: 14 дней — ещё нормально', backupStatus('2026-10-26T10:00:00Z', '2026-11-09', 50).level, 'ok');
+eq('копия: 15 дней — давно', backupStatus('2026-10-25T10:00:00Z', '2026-11-09', 50).level, 'old');
+eq('копия: больше месяца', backupStatus('2026-10-05T10:00:00Z', '2026-11-09', 50).level, 'stale');
+eq('копия: сколько дней назад', backupStatus('2026-11-05T10:00:00Z', '2026-11-09', 50).days, 4);
+S.sessions = []; S.activities = []; S.health = {};
 
 out.innerHTML = `<b>${fail ? `<span class="fail">Провалено: ${fail}</span>` : '<span class="ok">Все тесты прошли</span>'} · пройдено ${pass}</b>\n\n` + out.innerHTML;
 document.title = fail ? `FAIL ${fail}` : `OK ${pass}`;

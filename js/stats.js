@@ -161,3 +161,64 @@ export function parseHealth(text) {
   }
   return out;
 }
+
+// ---------- сводки для главной и «Целей» ----------
+
+// Визиты в клуб: за текущий месяц и всего с первого визита
+export function visitCounts(today) {
+  const all = clubVisitDates();
+  const m = today.slice(0, 7);
+  return { month: all.filter((d) => d.startsWith(m)).length, total: all.length, since: all[0] || null };
+}
+
+// Ходьба за день, неделю (пн–вс) и месяц — по сегодняшний день включительно
+export function walkTotals(today) {
+  const from = { week: cy.weekStart(today), month: `${today.slice(0, 8)}01` };
+  const sum = (fn, a) => sumRange(fn, a, today);
+  return {
+    day: { steps: Math.round(daySteps(today)), km: dayKm(today) },
+    week: { steps: Math.round(sum(daySteps, from.week)), km: sum(dayKm, from.week) },
+    month: { steps: Math.round(sum(daySteps, from.month)), km: sum(dayKm, from.month) },
+  };
+}
+
+// Последние n дней (включая сегодня), от старых к новым
+export function stepsByDay(today, n) {
+  const out = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const date = cy.addDays(today, -i);
+    out.push({ date, steps: Math.round(daySteps(date)), km: dayKm(date) });
+  }
+  return out;
+}
+
+// Последние n недель (пн–вс, текущая — до сегодняшнего дня), от старых к новым
+export function stepsByWeek(today, n) {
+  const out = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const ws = cy.addDays(cy.weekStart(today), -7 * i);
+    const to = cy.addDays(ws, 6) > today ? today : cy.addDays(ws, 6);
+    out.push({ ws, steps: Math.round(sumRange(daySteps, ws, to)), km: sumRange(dayKm, ws, to) });
+  }
+  return out;
+}
+
+// Сколько дней взято из Здоровья и когда последний раз
+export function healthInfo() {
+  const dates = Object.keys(S.health).filter((d) => S.health[d] && S.health[d].source !== 'manual').sort();
+  return { count: dates.length, last: dates[dates.length - 1] || null };
+}
+
+// Подпись часов активности в ячейке календаря: «45м», «2,5ч»
+export function hoursShortText(min) {
+  if (!(min > 0)) return '';
+  if (min < 60) return `${Math.round(min)}м`;
+  return `${(Math.round(min / 6) / 10).toString().replace('.', ',')}ч`;
+}
+
+// Состояние копии данных: new — пока рано напоминать, ok, old — больше 14 дней, stale — больше 30, none — копий не было
+export function backupStatus(lastAt, today, records) {
+  if (!lastAt) return { level: records >= 3 ? 'none' : 'new', days: null };
+  const days = cy.daysBetween(lastAt.slice(0, 10), today);
+  return { level: days > 30 ? 'stale' : days > 14 ? 'old' : 'ok', days };
+}
