@@ -4,7 +4,7 @@ import * as cy from './cycle.js';
 import * as P from './plan.js';
 import * as ST from './stats.js';
 import { esc, dec, btn, chip, icon, stars, heroArt, quoteOf, barChart, lineChart } from './ui.js';
-import { HOME_KINDS, SWAPS, TABLE_PROMPT, EX_BY_ID, STRETCHES, poolPlan, SPA_RULES } from './data.js';
+import { HOME_KINDS, SWAPS, TABLE_PROMPT, EX_BY_ID, STRETCHES, poolPlan, SPA_RULES, JOINT_WARMUP, JOINT_WARMUP_SEC, MOTIVATION, MOTIVATION_PROOFS_TITLE, MOTIVATION_NO_PROOFS, MOTIVATION_PM_NOTE } from './data.js';
 import { FOLDERS, PROGRAMS, programName, programExercises, upcomingSwaps, aquaPlan } from './programs.js';
 import { hasRuVoice } from './sound.js';
 
@@ -107,12 +107,15 @@ export function dayItemsHtml(date) {
   // бассейн: отметка о посещении, а пока не был — свободные от групповых занятий окна
   const poolAct = ST.activitiesOn(date).find((a) => a.kind === 'pool');
   const poolInSession = poolAct ? 0 : ST.sessionsOn(date).reduce((t, x) => t + ST.sessionPoolMin(x), 0);
+  const poolShut = P.poolClosed(date);
   if (!d.cancelled && (!past || canEdit || poolAct || poolInSession)) {
     const poolDone = !!poolAct || poolInSession > 0;
-    const poolMeta = poolAct ? `${poolAct.minutes || 30} мин` : poolInSession ? `${poolInSession} мин · из тренировки` : past ? 'не отмечено' : `Свободно: ${P.poolFreeText(date)}`;
+    // санитарный день: бассейн закрыт, отмечать нечего (если отметка уже есть — показываем как обычно)
+    const closedRow = poolShut && !poolDone;
+    const poolMeta = poolAct ? `${poolAct.minutes || 30} мин` : poolInSession ? `${poolInSession} мин · из тренировки` : closedRow ? cy.capitalize(P.POOL_SANITARY_TEXT) : past ? 'не отмечено' : `Свободно: ${P.poolFreeText(date)}`;
     const pv = esc(`${date}|pool`);
-    const tappable = !poolInSession && !future && canEdit;
-    rows.push(`<div class="day-item ${poolDone ? 'is-done' : past ? 'is-past' : 'is-suggest'} ${tappable ? 'is-tappable' : ''}" ${tappable ? `data-a="h-toggle" data-v="${pv}" role="button" tabindex="0"` : ''}><div class="di-icon">${icon('swim')}</div><div class="di-body"><div class="di-title">Бассейн</div><div class="di-meta">${esc(poolMeta)}</div></div>${poolInSession ? '' : tick('h-toggle', `${date}|pool`, !!poolAct, { disabled: future || !canEdit, label: 'Бассейн' })}</div>`);
+    const tappable = !closedRow && !poolInSession && !future && canEdit;
+    rows.push(`<div class="day-item ${poolDone ? 'is-done' : closedRow ? 'is-past' : past ? 'is-past' : 'is-suggest'} ${tappable ? 'is-tappable' : ''}" ${tappable ? `data-a="h-toggle" data-v="${pv}" role="button" tabindex="0"` : ''}><div class="di-icon">${icon('swim')}</div><div class="di-body"><div class="di-title">Бассейн</div><div class="di-meta">${esc(poolMeta)}</div></div>${poolInSession || closedRow ? '' : tick('h-toggle', `${date}|pool`, !!poolAct, { disabled: future || !canEdit, label: 'Бассейн' })}</div>`);
   }
 
   // групповые занятия клуба — серым, можно выбрать одно; за прошедшее время — отметить, что была
@@ -217,6 +220,7 @@ export function renderHome() {
     <button class="stat" data-a="goal-go" data-v="walk" aria-label="Ходьба: открыть график">${icon('route')}<span class="stat-go">${go}</span><div class="stat-val">${fmtN(wk.day.steps)}</div><div class="stat-lbl">шагов сегодня · ${dec(wk.day.km)} км</div><div class="stat-mini">неделя ${dec(wk.week.km, 0)} · месяц ${dec(wk.month.km, 0)} км</div></button>
   </section>`);
   parts.push(`<section class="card"><h2>Путь к цели</h2>${goalRows()}</section>`);
+  parts.push(motivationHtml({ compact: true }));
 
   const allDone = dayDone(t);
   parts.push(`<h2 class="section-title">Сегодня <button class="btn-link" data-a="day" data-v="${t}">Изменить план</button></h2>${dayItemsHtml(t)}${allDone ? '<p class="done-note">День засчитан — так держать!</p>' : ''}`);
@@ -396,6 +400,31 @@ export function weightBlockHtml(recordsOpen = false) {
     ${w.length ? `<details class="classes" ${recordsOpen ? 'open' : ''}><summary>Записи веса · ${w.length}</summary>${[...w].reverse().slice(0, 10).map((m) => `<div class="row-btn"><b>${cy.fmtShort(m.date)}${m.premenstrual ? ' · непоказательно' : ''}</b><span>${dec(m.weightKg)} кг</span><button class="btn-link danger-link" data-a="del-weight" data-v="${m.id}">Удалить</button></div>`).join('')}</details>` : ''}`;
 }
 
+// Поддержка, когда вес стоит или вырос: что уже изменилось, кроме веса. compact — короткая карточка для главной.
+const plural = (n, one, few, many) => { const m = n % 100; const k = n % 10; return m >= 11 && m <= 14 ? many : k === 1 ? one : k >= 2 && k <= 4 ? few : many; };
+const GIRTH_NAMES = { waistCm: 'талия', bellyNavelCm: 'живот', hipsCm: 'бёдра', thighCm: 'бедро' };
+function proofLine(p) {
+  if (p.type === 'visits') return `За последние 4 недели — ${p.n} ${plural(p.n, 'визит', 'визита', 'визитов')} в клуб. Регулярность — главный двигатель результата.`;
+  if (p.type === 'girth') return `Объёмы уменьшились с первого замера: ${p.items.map((i) => `${GIRTH_NAMES[i.key]} −${dec(Math.abs(i.delta))} см`).join(', ')}.`;
+  if (p.type === 'strength') {
+    const b = p.best;
+    const fmt = (x) => (x.weight > 0 ? `${dec(x.weight)} ${b.unit === 'plate' ? 'плит.' : 'кг'} × ${x.reps}` : `${x.reps} повт.`);
+    const ex = b && EX_BY_ID[b.exerciseId];
+    return `Сила растёт: в ${p.improved} из ${p.compared} ${plural(p.compared, 'упражнения', 'упражнений', 'упражнений')} результат лучше, чем в первый раз${ex ? `. Например, «${ex.name}»: ${fmt(b.from)} → ${fmt(b.to)}` : ''}.`;
+  }
+  return '';
+}
+export function motivationHtml({ compact = false } = {}) {
+  const m = ST.motivation(cy.today());
+  if (compact && !m.support) return '';
+  const t = MOTIVATION[m.kind];
+  const tr = m.trend;
+  const trendLine = tr ? `<p class="note">Средняя за 2 недели: ${dec(tr.recent)} кг, ${tr.from === 'first' ? 'первая запись' : 'до этого'} — ${dec(tr.before)} кг (${tr.delta > 0 ? '+' : tr.delta < 0 ? '−' : ''}${dec(Math.abs(tr.delta))}).</p>` : '';
+  const proofs = m.proofs.length ? `<h3 class="sheet-sub">${esc(MOTIVATION_PROOFS_TITLE)}</h3><ul class="list">${m.proofs.map((p) => `<li>${esc(proofLine(p))}</li>`).join('')}</ul>` : `<p class="note">${esc(MOTIVATION_NO_PROOFS)}</p>`;
+  const more = compact ? btn('Подробнее', 'weight-hub', { cls: 'btn-link' }) : `${t.tips.length ? `<ul class="list">${t.tips.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}${t.watch ? `<p class="note">${esc(t.watch)}</p>` : ''}${tr && tr.pmRecent ? `<p class="note">${esc(MOTIVATION_PM_NOTE)}</p>` : ''}`;
+  return `<section class="card motivation"><h2>${esc(t.title)}</h2><p>${esc(t.lead)}</p>${trendLine}${proofs}${more}</section>`;
+}
+
 // Окно «Вес»: сверху быстрая запись, ниже график
 export function renderWeightHub(o) {
   return `<div class="sheet-head"><h2>Вес</h2><button class="icon-btn" data-a="close" aria-label="Закрыть">${icon('x')}</button></div>
@@ -404,6 +433,7 @@ export function renderWeightHub(o) {
     <div class="row2">${btn('−1 кг', 'wt', { v: '-1' })}${btn('+1 кг', 'wt', { v: '1' })}</div>
     <label class="check"><input type="checkbox" data-f="wt-pm" ${o.pm ? 'checked' : ''}> Предменструальные дни</label>
     ${btn(o.saved ? 'Записано ✓ — записать ещё раз' : 'Записать вес', 'wt-save', { cls: 'btn-primary btn-xl' })}
+    ${motivationHtml()}
     <h3 class="sheet-sub">Изменение веса</h3>${weightBlockHtml(true)}
     ${btn('Открыть в «Целях»', 'goal-go', { v: 'weight', cls: 'btn-link' })}`;
 }
@@ -497,6 +527,7 @@ export function renderGoals() {
     <section class="card" id="g-weight"><h2>Вес, кг</h2>
       <div class="grid2">${btn(`${icon('plus', { size: 18 })} Добавить вес`, 'weight-open', { cls: 'btn-primary' })}</div>
       ${weightBlockHtml()}</section>
+    ${motivationHtml()}
     ${walkBlock()}
     <section class="card"><h2>Талия, см</h2>${waistChart}</section>
     <section class="card"><h2>Замеры</h2>${measures.length ? measures.map((m) => `<div class="row-btn"><b>${cy.fmtShort(m.date)}${m.checkpoint != null ? ` · контрольный ${m.checkpoint}` : ''}${m.premenstrual ? ' · непоказательно' : ''}</b><span>${CIRC.filter(([k]) => m[k] != null).map(([k, l]) => `${l} ${dec(m[k])}`).join(' · ')}</span><button class="btn-link danger-link" data-a="del-measure" data-v="${m.id}">Удалить</button></div>`).join('') : '<p class="note">Пока пусто.</p>'}</section>`;
@@ -545,6 +576,7 @@ export function renderDaySheet(date) {
     parts.push(`<div class="seg" role="group"><button data-a="day-type" data-v="${date}|gym" aria-pressed="${d.type === 'gym'}">День клуба</button><button data-a="day-type" data-v="${date}|home" aria-pressed="${d.type === 'home'}">Дома</button></div>`);
     if (d.type === 'gym') {
       parts.push(`<div class="chips">${Object.entries(P.GYM_KINDS).map(([k, v]) => chip(v.name, 'gym-kind', `${date}|${k}`, d.gymKind === k)).join('')}</div>`);
+      if (P.poolClosed(date)) parts.push('<p class="note">В бассейне санитарный день, он закрыт. Поэтому по умолчанию стоит «Только зал».</p>');
       if (d.gymKind !== 'pool') {
         const cur = P.slotFor(date, S.plan, S.settings.startDate, { sessions: S.sessions });
         parts.push(`<fieldset><legend>Программа</legend><div class="chips">${chip('По плану', 'day-prog', `${date}|`, !d.program)}${FOLDERS.flatMap((f) => f.programs).map((id) => chip(PROGRAMS[id].name, 'day-prog', `${date}|${id}`, d.program === id)).join('')}</div>
@@ -649,7 +681,10 @@ export function renderProgram(id) {
   const poolBody = `Плавание: ${esc(pool.text)}. Затем аквааэробика: ${esc(aqua.text)} — <button class="btn-link mini-link" data-a="prog-open" data-v="pool">упражнения</button>`;
   const spaBody = esc(SPA_RULES.slice(0, 3).join(' '));
   let n = 1;
-  const steps = p.kind === 'pool' ? [step(n++, 'Плавание', esc(pool.text))] : [step(n++, 'Разминка', `${id === 'cardio' ? 5 : 10} мин эллипс или велотренажёр, спокойно`)];
+  const steps = p.kind === 'pool' ? [step(n++, 'Плавание', esc(pool.text))] : [
+    step(n++, `Суставная разминка · ${Math.round(JOINT_WARMUP_SEC / 60)} мин`, esc(JOINT_WARMUP.map((x) => x.name.toLowerCase()).join(', '))),
+    step(n++, 'Разминка', `${id === 'cardio' ? 5 : 10} мин эллипс или велотренажёр, спокойно`),
+  ];
   if (p.kind === 'cardio') steps.push(step(n++, `Кардио ${ph.cardioMin} мин`, 'Зона 2: можно говорить короткими фразами. Эллипс, велотренажёр или дорожка с наклоном 5–8%.'));
   const exRows = exs.map((e) => `<button class="day-item ex-row" data-a="ex-open" data-v="${e.id}"><div class="di-icon">${S.photos[e.id] ? `<img src="${S.photos[e.id]}" alt="">` : icon(e.loadType === 'water' ? 'swim' : 'dumbbell')}</div>
     <div class="di-body"><div class="di-title">${esc(e.name)}</div><div class="di-meta">${esc(e.loadType === 'water' ? `${aquaPlan(cp.phase).rounds} × ${aquaPlan(cp.phase).sec} с` : doseFor(e, ctx))}${e.muscles ? ` · ${esc(e.muscles)}` : ''}</div></div>${icon('chevR', { size: 18 })}</button>`).join('');

@@ -222,3 +222,98 @@ export function backupStatus(lastAt, today, records) {
   const days = cy.daysBetween(lastAt.slice(0, 10), today);
   return { level: days > 30 ? 'stale' : days > 14 ? 'old' : 'ok', days };
 }
+
+// ---------- «прогресс есть, даже если вес стоит» ----------
+// Вес — шумный показатель, поэтому тенденция считается по средним за две недели, а рядом ищутся другие признаки прогресса.
+export const WEIGHT_FLAT_KG = 0.5;      // изменение средней меньше этого — «вес стоит»
+const TREND_DAYS = 14;                  // окно «сейчас» и окно «до этого», дней
+const GIRTH_KEYS = ['waistCm', 'bellyNavelCm', 'hipsCm', 'thighCm']; // грудь не считается: уменьшение там не цель
+const GIRTH_MIN_CM = 0.5;
+
+// Динамика веса: средняя за последние 14 дней против предыдущих 14 (без предменструальных записей).
+// Если предыдущих записей нет, сравнение идёт с самой первой записью — когда она старше 14 дней. Мало данных → null.
+export function weightTrend(today = cy.today(), list = weights()) {
+  const all = list.filter((m) => !m.premenstrual);
+  const avg = (a) => a.reduce((t, m) => t + m.weightKg, 0) / a.length;
+  const inRange = (from, to) => all.filter((m) => m.date >= from && m.date <= to);
+  const recent = inRange(cy.addDays(today, 1 - TREND_DAYS), today);
+  if (!recent.length) return null;
+  let before = inRange(cy.addDays(today, 1 - 2 * TREND_DAYS), cy.addDays(today, -TREND_DAYS));
+  let from = 'prev';
+  if (!before.length) {
+    const first = all[0];
+    if (!first || first.date > cy.addDays(today, -TREND_DAYS)) return null;
+    before = [first];
+    from = 'first';
+  }
+  const delta = +(avg(recent) - avg(before)).toFixed(1);
+  const kind = delta >= WEIGHT_FLAT_KG ? 'up' : delta <= -WEIGHT_FLAT_KG ? 'down' : 'flat';
+  const pmRecent = list.filter((m) => m.premenstrual && m.date >= cy.addDays(today, 1 - TREND_DAYS) && m.date <= today).length;
+  return { kind, delta, recent: +avg(recent).toFixed(1), before: +avg(before).toFixed(1), from, pmRecent };
+}
+
+// Визитов в клуб за последние days дней
+export function recentVisits(today, days = 28) {
+  const from = cy.addDays(today, 1 - days);
+  return clubVisitDates().filter((d) => d >= from && d <= today).length;
+}
+
+// Объёмы, которые уменьшились с первого замера (талия, живот, бёдра, бедро): [{ key, from, to, delta }]
+export function girthProgress(list = S.measurements) {
+  const sorted = [...list].sort((a, b) => (a.date + (a.at || '')).localeCompare(b.date + (b.at || '')));
+  const out = [];
+  for (const key of GIRTH_KEYS) {
+    const vals = sorted.filter((m) => m[key] != null);
+    if (vals.length < 2) continue;
+    const from = vals[0][key];
+    const to = vals[vals.length - 1][key];
+    const delta = +(to - from).toFixed(1);
+    if (delta <= -GIRTH_MIN_CM) out.push({ key, from, to, delta });
+  }
+  return out;
+}
+
+// Сила: по каждому упражнению (и единице веса) сравниваем лучший подход в первой и в последней тренировке.
+// Результат подхода — вес × повторы (без веса — просто повторы). «Лучше» — не меньше чем на 5%.
+export function strengthGains(sessions = S.sessions) {
+  const groups = new Map();
+  for (const s of sessions) {
+    if (s.status !== 'done' && s.status !== 'partial') continue;
+    for (const x of s.sets || []) {
+      if (x.isWarmup || !x.reps) continue;
+      const key = `${x.exerciseId}|${x.unit || ''}`;
+      const score = x.weight > 0 ? x.weight * x.reps : x.reps;
+      const g = groups.get(key) || new Map();
+      const cur = g.get(s.date);
+      if (!cur || score > cur.score) g.set(s.date, { score, weight: x.weight ?? null, reps: x.reps });
+      groups.set(key, g);
+    }
+  }
+  let compared = 0;
+  const better = [];
+  for (const [key, g] of groups) {
+    if (g.size < 2) continue;
+    compared++;
+    const dates = [...g.keys()].sort();
+    const first = g.get(dates[0]);
+    const last = g.get(dates[dates.length - 1]);
+    if (last.score >= first.score * 1.05) better.push({ exerciseId: key.split('|')[0], unit: key.split('|')[1] || null, from: first, to: last, ratio: last.score / first.score });
+  }
+  better.sort((a, b) => b.ratio - a.ratio);
+  return { improved: better.length, compared, best: better[0] || null };
+}
+
+// Всё вместе для карточки поддержки: kind — up / flat / down / none, proofs — что уже изменилось.
+// support — true, когда вес вырос или стоит: тогда карточка показывается и на главной.
+export function motivation(today = cy.today()) {
+  const trend = weightTrend(today);
+  const proofs = [];
+  const visits = recentVisits(today, 28);
+  if (visits >= 4) proofs.push({ type: 'visits', n: visits, days: 28 });
+  const strength = strengthGains();
+  if (strength.improved > 0) proofs.push({ type: 'strength', ...strength });
+  const girth = girthProgress();
+  if (girth.length) proofs.push({ type: 'girth', items: girth });
+  const kind = trend ? trend.kind : 'none';
+  return { kind, trend, proofs, support: kind === 'up' || kind === 'flat' };
+}

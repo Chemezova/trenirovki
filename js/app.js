@@ -9,6 +9,7 @@ import { esc, dec, btn, chip, icon, stars } from './ui.js';
 import * as V from './views.js';
 import {
   EXERCISES, EX_BY_ID, STRETCHES, poolPlan, CARDIO_MACHINES, STOP_MAIN, STOP_SECONDARY, SYMPTOMS, HOME_KINDS, TABLE_PROMPT, SPA_RULES,
+  JOINT_WARMUP, JOINT_WARMUP_SEC,
 } from './data.js';
 
 const $app = document.getElementById('app');
@@ -92,6 +93,8 @@ const stepFor = (ex) => exSet(ex).weightStep || ex.weightStep;
 const loadTypeFor = (ex) => exSet(ex).loadTypeOverride || ex.loadType;
 const modeFor = (ex) => (ex.progression === 'repsOnly' && loadTypeFor(ex) === 'dumbbell' ? 'double' : ex.progression);
 const hasFinish = (r) => r.gymKind !== 'gym';
+// Первый шаг после «Как ты сегодня?»: в зале — суставная разминка, только бассейн — сразу плавание
+const firstStage = (r) => (r.slot === 'pool' ? 'pool' : 'joints');
 const programIsLight = (r) => !!(PROGRAMS[r.slot] && PROGRAMS[r.slot].light);
 const afterMain = (r) => (hasFinish(r) ? 'pool' : 'stretch');
 
@@ -284,7 +287,7 @@ function renderWorkout() {
     ${r.stage !== 'summary' ? '<button class="btn btn-small btn-primary" data-a="end-early">Завершить</button>' : ''}
     <button class="stop-btn" data-a="stop" aria-label="Стоп-сигналы">!</button></div>`;
   const body = {
-    wellbeing: renderWellbeing, warmup: renderWarmup, exercises: renderExercises, cardio: renderCardio,
+    wellbeing: renderWellbeing, joints: renderJoints, warmup: renderWarmup, exercises: renderExercises, cardio: renderCardio,
     pool: renderPool, finish: renderFinish, aqua: renderAqua, spa: renderSpa, stretch: renderStretch, summary: renderSummary,
   }[r.stage]();
   return head + `<main class="workout">${body}</main>`;
@@ -298,6 +301,22 @@ function renderWellbeing() {
     ${row('Силы', 'energy', [['low', 'Мало'], ['ok', 'Нормально'], ['high', 'Много']])}
     ${row('Давление в глазах или голове', 'pressure', [['no', 'Нет'], ['yes', 'Есть']])}
     ${btn('Дальше', 'wb-next', { cls: 'btn-primary btn-xl' })}`;
+}
+
+// Суставная разминка — первый шаг любой тренировки в зале (кроме «только бассейн»)
+function renderJoints() {
+  const r = S.run;
+  const t = r.timer && r.timer.kind === 'joints' ? r.timer : null;
+  const head = '<h2 style="margin-top:14px">Суставная разминка</h2>';
+  if (!t) {
+    return `${head}<p class="lead">${Math.round(JOINT_WARMUP_SEC / 60)} мин, плавно, без рывков и боли. Голос подскажет, когда менять упражнение.</p>
+      <ol class="list">${JOINT_WARMUP.map((x) => `<li><b>${esc(x.name)}</b> — ${esc(x.hint)}</li>`).join('')}</ol>
+      ${btn('Старт', 'joints-start', { cls: 'btn-primary btn-xl' })}${btn('Уже сделано', 'joints-done')}${btn('Пропустить', 'joints-skip', { cls: 'btn-link' })}`;
+  }
+  if (t.done) return `<h2 style="margin-top:14px">Суставная разминка окончена</h2>${btn('К разминке', 'joints-done', { cls: 'btn-primary btn-xl' })}`;
+  const item = JOINT_WARMUP[tState(t).idx] || JOINT_WARMUP[0];
+  return `${head}${timerBlock('timer', t, { showTotal: true })}<p class="lead">${esc(item.hint)}</p>
+    ${btn(t.pausedAt ? 'Продолжить' : 'Пауза', 'timer-pause')}${btn('Следующее', 'timer-next')}${btn('К разминке', 'joints-done', { cls: 'btn-primary' })}`;
 }
 
 function renderWarmup() {
@@ -920,12 +939,19 @@ const A = {
     const w = S.run.wellbeing;
     if (w.pressure === 'yes') { await logSymptoms(['headPressure'], false, 'перед тренировкой'); S.overlay = { type: 'pressure' }; }
     else if ((w.sleep === 'bad' || w.energy === 'low') && !programIsLight(S.run)) S.overlay = { type: 'light' };
-    else S.run.stage = S.run.slot === 'pool' ? 'pool' : 'warmup';
+    else S.run.stage = firstStage(S.run);
     await saveRun(); render();
   },
-  light: async (v) => { S.run.lightDay = v === 'yes' || programIsLight(S.run); S.run.stage = S.run.slot === 'pool' ? 'pool' : 'warmup'; S.overlay = null; S.ui = {}; await saveRun(); render(); },
+  light: async (v) => { S.run.lightDay = v === 'yes' || programIsLight(S.run); S.run.stage = firstStage(S.run); S.overlay = null; S.ui = {}; await saveRun(); render(); },
   'abort-start': async () => { const r = S.run; r.aborted = true; r.status = 'skip'; r.finishedAt = nowISO(); r.note = 'Не начата: давление в глазах или голове'; S.overlay = null; await finalizeRun(); snd.keepAwake(false); go('home'); },
 
+  'joints-start': async () => {
+    const segments = JOINT_WARMUP.map((x) => ({ label: x.name, sec: x.sec, say: `${x.name}`, beep: 'short' }));
+    startTimer('timer', 'joints', segments, { endSay: 'Суставная разминка окончена' });
+    await saveRun(); render();
+  },
+  'joints-done': async () => { S.run.timer = null; S.run.joints = 'done'; S.run.stage = 'warmup'; await saveRun(); window.scrollTo(0, 0); render(); },
+  'joints-skip': async () => { S.run.timer = null; S.run.joints = 'skipped'; S.run.stage = 'warmup'; await saveRun(); window.scrollTo(0, 0); render(); },
   'warmup-start': async () => { startTimer('timer', 'warmup', [{ label: 'Разминка', sec: (S.run.slot === 'cardio' ? 5 : 10) * 60, half: true }], { endSay: 'Разминка окончена' }); await saveRun(); render(); },
   'warmup-done': async () => { S.run.timer = null; S.run.stage = S.run.slot === 'cardio' ? 'cardio' : 'exercises'; await saveRun(); render(); },
   'timer-pause': async () => { const t = S.run.timer; if (!t) return; if (t.pausedAt) { t.pausedMs += Date.now() - t.pausedAt; t.pausedAt = null; } else t.pausedAt = Date.now(); await saveRun(); render(); },
@@ -1237,7 +1263,22 @@ $app.addEventListener('change', async (e) => {
   }
 });
 
+// Числовые поля (вес, шаги, км, минуты, замеры): при касании всё выделяется, чтобы «0» не оставался перед набранным числом
+const isNumField = (el) => el && el.tagName === 'INPUT' && (el.inputMode === 'decimal' || el.inputMode === 'numeric');
+let selectedOnTap = null;
+$app.addEventListener('focusin', (e) => {
+  const el = e.target;
+  if (!isNumField(el)) return;
+  selectedOnTap = el;
+  setTimeout(() => { try { el.setSelectionRange(0, el.value.length); } catch { /* поле без выделения */ } }, 0);
+});
+// iPhone после касания ставит курсор и снимает выделение — отменяем это один раз
+$app.addEventListener('mouseup', (e) => { if (selectedOnTap && e.target === selectedOnTap) { e.preventDefault(); selectedOnTap = null; } });
+$app.addEventListener('focusout', () => { selectedOnTap = null; });
+
 $app.addEventListener('input', (e) => {
+  // запасная защита: «056» → «56» (ноль в начале не нужен, «0,5» остаётся)
+  if (isNumField(e.target) && /^0+(?=\d)/.test(e.target.value)) e.target.value = e.target.value.replace(/^0+(?=\d)/, '');
   const f = e.target.dataset.f;
   if (f && f.startsWith('m-')) S.form[f.slice(2)] = e.target.value;
   if (f === 'w-val') { const t = e.target.value.trim(); if (t === '') S.ui.weight = null; else { const n = num(t); if (n != null && n >= 0) S.ui.weight = n; } }

@@ -128,6 +128,21 @@ eq('бассейн сб', poolFreeText('2026-11-07'), '15:00–22:00');
 eq('бассейн вс — весь день', poolFreeText('2026-11-08'), 'весь день');
 eq('бассейн: окна вт — два', poolFreeFor('2026-11-03').length, 2);
 
+// санитарный день бассейна: 1-е и 3-е воскресенье месяца
+const { poolClosed, effective: planDay } = await import('./js/plan.js');
+eq('санитарный: 1-е воскресенье (01.11)', poolClosed('2026-11-01'), true);
+eq('санитарный: 2-е воскресенье (08.11) — работает', poolClosed('2026-11-08'), false);
+eq('санитарный: 3-е воскресенье (15.11)', poolClosed('2026-11-15'), true);
+eq('санитарный: 4-е воскресенье (22.11) — работает', poolClosed('2026-11-22'), false);
+eq('санитарный: 5-е воскресенье (29.11) — работает', poolClosed('2026-11-29'), false);
+eq('санитарный: декабрь, 1-е и 3-е воскресенье', ['2026-12-06', '2026-12-13', '2026-12-20'].map((d) => poolClosed(d)), [true, false, true]);
+eq('санитарный: суббота 07.11 (первая в месяце) — не закрыто', poolClosed('2026-11-07'), false);
+eq('санитарный: в тексте расписания', poolFreeText('2026-11-15'), 'санитарный день — бассейн закрыт');
+eq('санитарный: свободных окон нет', poolFreeFor('2026-11-15'), []);
+eq('санитарный: по умолчанию «Только зал»', planDay('2026-11-15', { days: {} }).gymKind, 'gym');
+eq('санитарный: выбор вручную сохраняется', planDay('2026-11-15', { days: { '2026-11-15': { gymKind: 'full' } } }).gymKind, 'full');
+eq('обычное воскресенье: «Зал + бассейн»', planDay('2026-11-08', { days: {} }).gymKind, 'full');
+
 // бассейн в подсчётах
 eq('бассейн: сделан по таймеру', sessionPoolMin({ pool: { result: 'done', minutes: 30 } }), 30);
 eq('бассейн: «не плавала» — 0', sessionPoolMin({ pool: { result: 'none' } }), 0);
@@ -141,6 +156,57 @@ eq('бассейн за день: только отметка', swimMinutesOn('2
 eq('бассейн за день: нет', swimMinutesOn('2026-11-04'), 0);
 eq('визиты в клуб: бассейн и групповое считаются', clubVisitDates(), ['2026-11-01', '2026-11-02', '2026-11-03']);
 S.sessions = []; S.activities = [];
+
+// мотивация: тенденция веса и другие признаки прогресса
+const { weightTrend, girthProgress, strengthGains, recentVisits, motivation } = await import('./js/stats.js');
+const TD = '2026-11-14';
+const wr = (date, weightKg, premenstrual = false) => ({ date, at: `${date}T07:00:00`, weightKg, premenstrual });
+eq('вес: нет записей → нет тенденции', weightTrend(TD, []), null);
+eq('вес: стоит (+0,2) → flat', weightTrend(TD, [wr('2026-10-25', 68.0), wr('2026-11-05', 68.2)]).kind, 'flat');
+eq('вес: вырос (+1,0) → up', weightTrend(TD, [wr('2026-10-25', 67.0), wr('2026-11-08', 68.0)]).kind, 'up');
+eq('вес: вырос — дельта', weightTrend(TD, [wr('2026-10-25', 67.0), wr('2026-11-08', 68.0)]).delta, 1);
+eq('вес: снизился (−0,8) → down', weightTrend(TD, [wr('2026-10-25', 68.0), wr('2026-11-08', 67.2)]).kind, 'down');
+eq('вес: граница ±0,5 уже не «стоит»', weightTrend(TD, [wr('2026-10-25', 68.0), wr('2026-11-08', 68.5)]).kind, 'up');
+eq('вес: средняя за 2 недели, а не последняя запись', weightTrend(TD, [wr('2026-10-25', 68.0), wr('2026-11-02', 68.6), wr('2026-11-10', 68.0)]).kind, 'flat');
+const pmT = weightTrend(TD, [wr('2026-10-25', 68.0), wr('2026-11-05', 68.2), wr('2026-11-10', 71.0, true)]);
+eq('вес: предменструальная запись не влияет', [pmT.kind, pmT.recent, pmT.pmRecent], ['flat', 68.2, 1]);
+const firstT = weightTrend(TD, [wr('2026-10-01', 70.0), wr('2026-11-10', 69.0)]);
+eq('вес: нет записей за прошлые 2 недели → сравнение с первой', [firstT.kind, firstT.from], ['down', 'first']);
+eq('вес: одна свежая запись — мало данных', weightTrend(TD, [wr('2026-11-10', 69.0)]), null);
+eq('вес: нет свежих записей — нет тенденции', weightTrend(TD, [wr('2026-10-25', 68.0)]), null);
+
+eq('объёмы: талия −2,5 см считается', girthProgress([{ date: '2026-10-26', waistCm: 90, hipsCm: 100, chestCm: 95 }, { date: '2026-11-23', waistCm: 87.5, hipsCm: 99.8, chestCm: 90 }]), [{ key: 'waistCm', from: 90, to: 87.5, delta: -2.5 }]);
+eq('объёмы: один замер — сравнивать не с чем', girthProgress([{ date: '2026-10-26', waistCm: 90 }]), []);
+
+const setOf = (exerciseId, weight, reps, extra = {}) => ({ exerciseId, weight, reps, unit: 'plate', ...extra });
+const sg = strengthGains([
+  { date: '2026-10-27', status: 'done', sets: [setOf('a', 3, 12), setOf('a', 50, 10, { isWarmup: true }), setOf('c', 10, 10, { unit: 'kg' }), setOf('b', 5, 10)] },
+  { date: '2026-11-10', status: 'done', sets: [setOf('a', 4, 12), setOf('c', 10, 10, { unit: 'kg' })] },
+  { date: '2026-11-12', status: 'skip', sets: [setOf('a', 9, 12)] },
+]);
+eq('сила: лучше в 1 из 2 сравнимых упражнений', [sg.improved, sg.compared], [1, 2]);
+eq('сила: лучший пример — упражнение a, 3 → 4 плит.', [sg.best.exerciseId, sg.best.unit, sg.best.from.weight, sg.best.to.weight], ['a', 'plate', 3, 4]);
+eq('сила: нет тренировок — нет данных', strengthGains([]), { improved: 0, compared: 0, best: null });
+
+S.sessions = ['2026-10-10', '2026-10-20', '2026-10-27', '2026-11-03', '2026-11-10'].map((date) => ({ date, status: 'done', slot: 'A', sets: [] }));
+eq('визиты за 28 дней: старые не считаются', recentVisits(TD, 28), 4);
+
+// всё вместе: вес вырос, но силовая, объёмы и визиты улучшились
+S.sessions = [
+  { date: '2026-10-27', status: 'done', slot: 'A', sets: [setOf('a', 3, 12)] },
+  { date: '2026-11-03', status: 'done', slot: 'B', sets: [] },
+  { date: '2026-11-05', status: 'done', slot: 'cardio', sets: [] },
+  { date: '2026-11-10', status: 'done', slot: 'A', sets: [setOf('a', 4, 12)] },
+];
+S.measurements = [wr('2026-10-25', 67.0), wr('2026-11-08', 68.0), { date: '2026-10-26', waistCm: 90 }, { date: '2026-11-12', waistCm: 88 }];
+const mo = motivation(TD);
+eq('мотивация: вес вырос → up, нужна поддержка', [mo.kind, mo.support], ['up', true]);
+eq('мотивация: найдены визиты, сила и объёмы', mo.proofs.map((p) => p.type), ['visits', 'strength', 'girth']);
+S.measurements = [wr('2026-10-25', 68.0), wr('2026-11-08', 67.0)];
+eq('мотивация: вес снизился — поддержка на главной не нужна', [motivation(TD).kind, motivation(TD).support], ['down', false]);
+S.measurements = [];
+eq('мотивация: нет записей веса — none, без поддержки', [motivation(TD).kind, motivation(TD).support], ['none', false]);
+S.sessions = []; S.measurements = []; S.activities = [];
 
 // счётчики главной: визиты за месяц и всего
 S.sessions = [{ date: '2026-10-20', status: 'done' }, { date: '2026-10-29', status: 'partial' }, { date: '2026-11-03', status: 'done' }, { date: '2026-11-08', status: 'skip' }];

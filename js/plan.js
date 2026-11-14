@@ -69,12 +69,22 @@ export const POOL_FREE = {
   6: [['15:00', '22:00']],
   7: 'all',
 };
+// Санитарные дни бассейна: бассейн закрыт. День недели (1–7) и номера таких дней в месяце
+// (1 и 3 — первое и третье воскресенье). Правило клуба, меняется здесь.
+export const POOL_SANITARY = { weekday: 7, nth: [1, 3] };
+export const POOL_SANITARY_TEXT = 'санитарный день — бассейн закрыт';
+// Какое по счёту это воскресенье (или другой день недели) в месяце: 1–5
+export const nthWeekdayOfMonth = (date) => Math.ceil(Number(date.slice(8, 10)) / 7);
+export const poolClosed = (date) => cy.weekday(date) === POOL_SANITARY.weekday && POOL_SANITARY.nth.includes(nthWeekdayOfMonth(date));
+
 export function poolFreeFor(date) {
+  if (poolClosed(date)) return [];
   const w = POOL_FREE[cy.weekday(date)];
   return w === 'all' ? [] : (w || []).map(([start, end]) => ({ start, end }));
 }
-export const poolAllDay = (date) => POOL_FREE[cy.weekday(date)] === 'all';
+export const poolAllDay = (date) => !poolClosed(date) && POOL_FREE[cy.weekday(date)] === 'all';
 export function poolFreeText(date) {
+  if (poolClosed(date)) return POOL_SANITARY_TEXT;
   if (poolAllDay(date)) return 'весь день';
   return poolFreeFor(date).map((w) => `${w.start}–${w.end}`).join(', ');
 }
@@ -87,7 +97,8 @@ export const classById = (date, id) => classesFor(date).find((c) => c.id === id)
 export function effective(date, plan) {
   const o = plan.days[date] || {};
   const type = o.type || (DEFAULT_GYM_WEEKDAYS.includes(cy.weekday(date)) ? 'gym' : 'home');
-  return { date, type, gymKind: o.gymKind || 'full', classId: o.classId || null, cancelled: o.cancelled || null, program: o.program || null, finisher: o.finisher || 'pool' };
+  // в санитарный день бассейна по умолчанию только зал (если вид не выбран вручную)
+  return { date, type, gymKind: o.gymKind || (poolClosed(date) ? 'gym' : 'full'), classId: o.classId || null, cancelled: o.cancelled || null, program: o.program || null, finisher: o.finisher || 'pool' };
 }
 
 export const weekDates = (ws) => Array.from({ length: 7 }, (_, i) => cy.addDays(ws, i));

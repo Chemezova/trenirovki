@@ -422,3 +422,8 @@ button.stat:active { transform: scale(.98); }
 .kpis.k3 .kpi { padding: 10px 8px; min-width: 0; }
 .kpis.k3 .kpi b { font-size: 1.1rem; white-space: nowrap; }
 .kpis.k3 .kpi span { font-size: .72rem; line-height: 1.3; }
+
+/* Карточка поддержки, когда вес стоит или вырос */
+.motivation { border-left: 4px solid var(--sage); }
+.motivation h2 { margin-bottom: 6px; }
+.motivation .list { margin: 6px 0; }
