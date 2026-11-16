@@ -13,7 +13,8 @@ import {
 } from './data.js';
 
 const $app = document.getElementById('app');
-import { PROGRAMS, programName, isStrength, programExercises, aquaPlan } from './programs.js';
+import { PROGRAMS, programName, isStrength, programExercises, aquaPlan, availableExerciseIds } from './programs.js';
+import * as CAT from './catalog.js';
 
 // ---------- утилиты ----------
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -300,6 +301,7 @@ function renderWellbeing() {
     ${row('Сон', 'sleep', [['bad', 'Плохо'], ['ok', 'Нормально'], ['good', 'Хорошо']])}
     ${row('Силы', 'energy', [['low', 'Мало'], ['ok', 'Нормально'], ['high', 'Много']])}
     ${row('Давление в глазах или голове', 'pressure', [['no', 'Нет'], ['yes', 'Есть']])}
+    ${S.settings.profile === 'female' ? row('Критические дни', 'critical', [['no', 'Нет'], ['yes', 'Да']]) : ''}
     ${btn('Дальше', 'wb-next', { cls: 'btn-primary btn-xl' })}`;
 }
 
@@ -358,6 +360,7 @@ function renderExercises() {
   const planOrder = exercisesFor(r.slot, r.phase).map((e) => e.id);
   const canWarmup = planOrder.indexOf(ex.id) < 2 && !r.sets.some((x) => x.exerciseId === ex.id) && sug.weight != null;
   const isMachine = ex.loadType === 'machine' || ex.loadType === 'cable';
+  const canSwap = canSwapEx(r, ex);
   const hist = historyFor(ex.id).slice(0, 3);
   const showWeight = loadTypeFor(ex) !== 'bodyweight' && sug.kind !== 'bodyweight';
   const bigSug = !showWeight ? `${sug.targetReps ?? range.max} повт.` : sug.kind === 'calibration' && sug.weight == null ? '<span class="big-text">Подбери вес</span>' : esc(fmtWeight(sug.weight, unit));
@@ -380,7 +383,20 @@ function renderExercises() {
     ${undoButton()}
     ${canWarmup ? btn(`Разминочный подход: 10 × ${esc(fmtWeight(roundToStep(sug.weight / 2, stepFor(ex)), unit))}`, 'warmup-set') : ''}
     ${isMachine ? `<label class="field">Настройка тренажёра<input type="text" data-f="seat" value="${esc(exSet(ex).seat || '')}" placeholder="сиденье 4, валик 2"></label>` : ''}
-    <div class="grid2">${btn('Техника', 'tech')}${btn('Список', 'list')}${btn('Отложить в конец', 'postpone')}${btn('Пропустить', 'skip-ex')}</div>`;
+    <div class="grid2">${btn('Техника', 'tech')}${btn('Список', 'list')}${btn('Отложить в конец', 'postpone')}${btn('Пропустить', 'skip-ex')}</div>
+    ${canSwap ? btn('Заменить другим упражнением', 'swap') : ''}`;
+}
+
+// Замена доступна в силовой тренировке до первого подхода этого упражнения
+const canSwapEx = (r, ex) => isStrength(r.slot) && !!CAT.verdict(ex.id).known && !r.sets.some((x) => x.exerciseId === ex.id);
+
+function swapOptions() {
+  const r = S.run;
+  return CAT.alternatives(currentEx().id, {
+    available: availableExerciseIds(r.phase),
+    exclude: r.order,
+    conditionIds: CAT.activeConditions(S.settings, r.wellbeing),
+  });
 }
 
 function undoButton() {
@@ -627,6 +643,14 @@ function renderOverlay() {
       const mark = r.skipped.includes(id) ? 'пропущено' : exComplete(id) ? `✓ ${n}/${setsTarget()}` : `${n}/${setsTarget()}`;
       return `<button class="row-btn" data-a="goto-ex" data-v="${i}" ${i === r.current ? 'aria-current="true"' : ''}><b>${i + 1}. ${esc(EX_BY_ID[id].name)}</b><span>${mark}</span></button>`;
     }).join('')}</div>${btn('Закрыть', 'close')}`;
+  } else if (o.type === 'swap') {
+    const cur = currentEx();
+    const { options, hidden } = swapOptions();
+    inner = `<div class="sheet-head"><h2>Чем заменить</h2><button class="icon-btn" data-a="close" aria-label="Закрыть">${icon('x')}</button></div>
+      <p class="sub">«${esc(cur.name)}»${cur.muscles ? ` — работают: ${esc(cur.muscles.toLowerCase())}` : ''}. Ниже упражнения на те же мышцы, с другим тренажёром — выше. Вес подскажу по прошлым подходам; если их не было — подбери сама.</p>
+      ${options.length ? `<div class="stack">${options.map((x) => `<button class="row-btn" data-a="swap-pick" data-v="${x.id}"><b>${esc(EX_BY_ID[x.id].name)}</b><span>${esc(CAT.equipmentName(x.machine))}${x.otherMachine ? '' : ' · тот же тренажёр'}</span>${x.level === 'caution' ? `<span class="badge badge-care">осторожно: ${esc(x.reasons[0].why)}</span>` : ''}</button>`).join('')}</div>` : '<p>Подходящих замен в этой фазе пока нет.</p>'}
+      ${hidden ? `<p class="note">Скрыто ${hidden}: не подходят при твоих ограничениях.</p>` : ''}
+      ${btn('Закрыть', 'close')}`;
   } else if (o.type === 'tech') {
     inner = V.renderExerciseCard(currentEx().id);
   } else if (o.type === 'ex') {
@@ -1001,6 +1025,17 @@ const A = {
   'rest-skip': async () => { S.run.rest = null; await saveRun(); render(); },
   list: () => { S.overlay = { type: 'list' }; render(); },
   tech: () => { S.overlay = { type: 'tech' }; render(); },
+  swap: () => { if (canSwapEx(S.run, currentEx())) { S.overlay = { type: 'swap' }; render(); } },
+  'swap-pick': async (v) => {
+    const r = S.run;
+    const from = r.order[r.current];
+    if (!canSwapEx(r, EX_BY_ID[from]) || !swapOptions().options.some((x) => x.id === v)) return;
+    r.order[r.current] = v;
+    r.skipped = r.skipped.filter((id) => id !== from);
+    (r.swaps = r.swaps || []).push({ from, to: v, at: nowISO() });
+    S.overlay = null; S.ui = {};
+    await saveRun(); render();
+  },
   'goto-ex': async (v) => { const r = S.run; const i = Number(v); r.current = i; r.skipped = r.skipped.filter((id) => id !== r.order[i]); S.overlay = null; S.ui = {}; await saveRun(); render(); },
   postpone: async () => {
     const r = S.run;

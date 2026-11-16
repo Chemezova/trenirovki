@@ -8,7 +8,10 @@
 <script type="module">
 import * as cy from './js/cycle.js';
 import { suggest } from './js/progression.js';
-import { programExercises, upcomingSwaps, aquaPlan } from './js/programs.js';
+import { programExercises, upcomingSwaps, aquaPlan, availableExerciseIds } from './js/programs.js';
+import { EXERCISES, EX_BY_ID } from './js/data.js';
+import { activeConditions, verdict, alternatives } from './js/catalog.js';
+import { EXERCISE_META, MUSCLES, EQUIPMENT, RISK_TAGS, CONDITIONS } from './js/catalog-data.js';
 import { parseHealth, stepsToKm, kmToSteps, walkSteps, sessionPoolMin, swimMinutesOn, clubVisitDates, visitCounts, walkTotals, stepsByDay, stepsByWeek, healthInfo, hoursShortText, backupStatus } from './js/stats.js';
 import { S } from './js/state.js';
 import { historyInUnit } from './js/progression.js';
@@ -286,6 +289,62 @@ const sugKg = suggest({ history: asKg.history, range: { min: 12, max: 15 }, step
 eq('подсказка в кг после плиток — подбор веса, не «3 кг»', [sugKg.kind, sugKg.weight], ['calibration', null]);
 const sugPlate = suggest({ history: asPlate.history, range: { min: 12, max: 15 }, step: 1, mode: 'double', today: '2026-11-10', startWeight: null });
 eq('подсказка в плитках: вес 3 плитки на месте', sugPlate.weight != null && sugPlate.weight >= 3, true);
+
+
+// каталог: целостность данных
+const strengthIds = availableExerciseIds('p3').concat(availableExerciseIds('p1')).filter((id, i, a) => a.indexOf(id) === i);
+eq('каталог: у каждого силового упражнения есть описание в каталоге', strengthIds.filter((id) => !EXERCISE_META[id]), []);
+eq('каталог: каждая запись каталога есть в упражнениях приложения', Object.keys(EXERCISE_META).filter((id) => !EX_BY_ID[id]), []);
+eq('каталог: мышцы существуют', Object.entries(EXERCISE_META).filter(([, m]) => [...m.primary, ...m.secondary].some((x) => !MUSCLES[x])).map(([id]) => id), []);
+eq('каталог: тренажёры существуют', Object.entries(EXERCISE_META).filter(([, m]) => m.equipment.some((x) => !EQUIPMENT[x])).map(([id]) => id), []);
+eq('каталог: метки существуют', Object.entries(EXERCISE_META).filter(([, m]) => m.tags.some((x) => !RISK_TAGS[x])).map(([id]) => id), []);
+eq('каталог: у каждого упражнения есть основная мышца и тренажёр', Object.entries(EXERCISE_META).filter(([, m]) => !m.primary.length || !m.equipment.length).map(([id]) => id), []);
+eq('каталог: метки в правилах ограничений существуют', Object.entries(CONDITIONS).filter(([, c]) => c.rules.some((r) => !RISK_TAGS[r.tag] || !['avoid', 'caution'].includes(r.level))).map(([id]) => id), []);
+
+// каталог: ограничения и вердикт
+eq('ограничения: из настроек', activeConditions({ conditions: ['eyes'] }, {}), ['eyes']);
+eq('ограничения: критические дни из «Как ты сегодня?»', activeConditions({ conditions: ['eyes'] }, { critical: 'yes' }), ['eyes', 'critical-days']);
+eq('ограничения: «Нет» ничего не добавляет', activeConditions({ conditions: ['eyes'] }, { critical: 'no' }), ['eyes']);
+eq('ограничения: неизвестное отбрасывается', activeConditions({ conditions: ['eyes', 'nope'] }, {}), ['eyes']);
+eq('вердикт: присед при глазах — можно', verdict('goblet-box-squat', ['eyes']).level, 'ok');
+eq('вердикт: отведение назад при глазах — осторожно', verdict('cable-kickback', ['eyes']).level, 'caution');
+eq('вердикт: Паллоф — причина «задержка дыхания»', verdict('pallof-press', ['eyes']).reasons[0].tag, 'breath_hold_risk');
+eq('вердикт: упражнения нет в каталоге — можно, но не известно', [verdict('aqua-squat', ['eyes']).level, verdict('aqua-squat', ['eyes']).known], ['ok', false]);
+EXERCISE_META['t-bridge'] = { pattern: 'hip-extension', primary: ['glutes-max'], secondary: [], equipment: ['mat'], tags: ['hip_above_head'] };
+EXERCISE_META['t-inverted'] = { pattern: 'hip-extension', primary: ['glutes-max'], secondary: [], equipment: ['mat'], tags: ['inverted'] };
+eq('вердикт: таз выше головы в критические дни — осторожно', verdict('t-bridge', ['critical-days']).level, 'caution');
+eq('вердикт: таз выше головы при глазах — нельзя', verdict('t-bridge', ['eyes']).level, 'avoid');
+eq('вердикт: два ограничения — берётся худшее', verdict('t-bridge', ['critical-days', 'eyes']).level, 'avoid');
+eq('вердикт: перевёрнутая поза в критические дни — нельзя', verdict('t-inverted', ['critical-days']).level, 'avoid');
+eq('вердикт: без ограничений всё можно', verdict('t-inverted', []).level, 'ok');
+
+// каталог: замены
+const alt = (id, phase, extra = {}) => alternatives(id, { available: availableExerciseIds(phase), conditionIds: ['eyes'], ...extra });
+const optIds = (r) => r.options.map((x) => x.id);
+eq('замены: себя не предлагает', optIds(alt('leg-extension', 'p1')).includes('leg-extension'), false);
+eq('замены: на ту же мышцу — приседание и зашагивание', ['goblet-box-squat', 'step-up'].every((id) => optIds(alt('leg-extension', 'p1')).includes(id)), true);
+eq('замены: вариация фазы «Закрепление» в первой фазе не предлагается', optIds(alt('leg-extension', 'p1')).includes('single-leg-extension'), false);
+eq('замены: в фазе «Закрепление» она есть', optIds(alt('leg-extension', 'p3')).includes('single-leg-extension'), true);
+eq('замены: с другим тренажёром — выше, чем с тем же', alt('leg-extension', 'p3').options[0].otherMachine, true);
+eq('замены: тот же тренажёр помечен', alt('leg-extension', 'p3').options.find((x) => x.id === 'single-leg-extension').otherMachine, false);
+eq('замены: уже стоящие в тренировке не предлагаются', optIds(alt('leg-extension', 'p1', { exclude: ['step-up'] })).includes('step-up'), false);
+eq('замены: аквааэробика не предлагается', optIds(alt('leg-extension', 'p3')).some((id) => id.startsWith('aqua-')), false);
+eq('замены: упражнения нет в каталоге — пусто', alt('aqua-squat', 'p1'), { options: [], hidden: 0 });
+const bridgeFor = (c) => alternatives('cable-kickback', { available: ['t-bridge'], conditionIds: c });
+eq('замены: «нельзя» скрывается и считается', [optIds(bridgeFor(['eyes'])), bridgeFor(['eyes']).hidden], [[], 1]);
+eq('замены: без ограничений предлагается', optIds(bridgeFor([])), ['t-bridge']);
+eq('замены: осторожное предлагается с причиной', alternatives('cable-kickback', { available: ['t-bridge'], conditionIds: ['critical-days'] }).options[0].reasons[0].tag, 'hip_above_head');
+eq('замены: осторожное ниже безопасного', optIds(alternatives('cable-kickback', { available: ['t-bridge', 'step-up'], conditionIds: ['critical-days'] })), ['step-up', 't-bridge']);
+delete EXERCISE_META['t-bridge']; delete EXERCISE_META['t-inverted'];
+eq('замены: основные упражнения А и Б имеют замену в «Закреплении»', ['goblet-box-squat', 'leg-extension', 'seated-leg-curl', 'lat-pulldown', 'hip-abduction', 'dead-bug', 'seated-row', 'chest-press', 'cable-kickback'].filter((id) => !alt(id, 'p3').options.length), []);
+eq('замены: приседу не предлагают «птицу-собаку»', optIds(alt('goblet-box-squat', 'p1')).includes('bird-dog'), false);
+eq('замены: тяга сверху ↔ тяга сидя (похожее движение, помогающие мышцы)', optIds(alt('lat-pulldown', 'p1')).includes('seated-row'), true);
+const noAltP3 = ['A', 'B'].flatMap((p) => programExercises(p, 'p3')).filter((e) => !alt(e.id, 'p3').options.length).map((e) => e.id);
+out.innerHTML += `<span class="ok">ℹ нет замен в «Закреплении» у: ${noAltP3.join(', ') || '—'}</span>\n`;
+const noAltP1 = ['A', 'B'].flatMap((p) => programExercises(p, 'p1')).filter((e) => !alt(e.id, 'p1').options.length).map((e) => e.id);
+out.innerHTML += `<span class="ok">ℹ нет замен в 1-й фазе у: ${noAltP1.join(', ') || '—'}</span>\n`;
+eq('доступные упражнения: фаза 1 без вариаций и воды', [availableExerciseIds('p1').includes('goblet-box-squat'), availableExerciseIds('p1').includes('tempo-box-squat'), availableExerciseIds('p1').includes('aqua-squat')], [true, false, false]);
+eq('доступные упражнения: «Закрепление» с вариациями', availableExerciseIds('p3').includes('tempo-box-squat'), true);
 
 out.innerHTML = `<b>${fail ? `<span class="fail">Провалено: ${fail}</span>` : '<span class="ok">Все тесты прошли</span>'} · пройдено ${pass}</b>\n\n` + out.innerHTML;
 document.title = fail ? `FAIL ${fail}` : `OK ${pass}`;

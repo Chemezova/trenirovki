@@ -334,6 +334,11 @@ export function programExercises(id, phase) {
   return p.exercises.map((x) => EX_BY_ID[swaps[x] || x]).filter((e) => e && phaseIdx(phase) >= phaseIdx(e.fromPhase));
 }
 
+// Силовые упражнения, доступные в этой фазе (без аквааэробики) — из них подбираются замены
+export function availableExerciseIds(phase) {
+  return EXERCISES.filter((e) => !AQUA_IDS.includes(e.id) && phaseIdx(phase) >= phaseIdx(e.fromPhase)).map((e) => e.id);
+}
+
 // Какие замены ждут программу позже, чем текущая фаза
 export function upcomingSwaps(id, phase) {
   const p = PROGRAMS[id];

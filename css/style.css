@@ -427,3 +427,4 @@ button.stat:active { transform: scale(.98); }
 .motivation { border-left: 4px solid var(--sage); }
 .motivation h2 { margin-bottom: 6px; }
 .motivation .list { margin: 6px 0; }
+.row-btn .badge-care { color: var(--warn-text); }
