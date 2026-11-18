@@ -530,7 +530,8 @@ export function renderGoals() {
     ${motivationHtml()}
     ${walkBlock()}
     <section class="card"><h2>Талия, см</h2>${waistChart}</section>
-    <section class="card"><h2>Замеры</h2>${measures.length ? measures.map((m) => `<div class="row-btn"><b>${cy.fmtShort(m.date)}${m.checkpoint != null ? ` · контрольный ${m.checkpoint}` : ''}${m.premenstrual ? ' · непоказательно' : ''}</b><span>${CIRC.filter(([k]) => m[k] != null).map(([k, l]) => `${l} ${dec(m[k])}`).join(' · ')}</span><button class="btn-link danger-link" data-a="del-measure" data-v="${m.id}">Удалить</button></div>`).join('') : '<p class="note">Пока пусто.</p>'}</section>`;
+    <section class="card"><h2>Замеры</h2>${measures.length ? measures.map((m) => `<div class="row-btn"><b>${cy.fmtShort(m.date)}${m.checkpoint != null ? ` · контрольный ${m.checkpoint}` : ''}${m.premenstrual ? ' · непоказательно' : ''}</b><span>${CIRC.filter(([k]) => m[k] != null).map(([k, l]) => `${l} ${dec(m[k])}`).join(' · ')}</span><button class="btn-link danger-link" data-a="del-measure" data-v="${m.id}">Удалить</button></div>`).join('') : '<p class="note">Пока пусто.</p>'}</section>
+    <p class="note center">Версия ${self.APP_VERSION || '?'} от ${self.APP_DATE || '?'}</p>`;
 }
 
 // ---------- настройки ----------
