@@ -1,5 +1,6 @@
 // Программы тренировок: установочные, комплексы-миксы и папки блогеров (из «Моих видео»)
 import { EXERCISES, EX_BY_ID } from './data.js';
+import { UNIVERSAL } from './exercises-extra.js';
 
 // Дополнительные упражнения для миксов — все проверены по ограничениям: без задержки дыхания,
 // без прыжков, голова не ниже сердца, без тяжёлых базовых
@@ -206,7 +207,7 @@ export function aquaPlan(phase) {
   return { ...p, minutes, segments, text: `${p.rounds} × ${AQUA.length} упражнений по ${p.sec} с, ~${minutes} мин` };
 }
 
-for (const e of [...EXTRA, ...VARIATIONS, ...AQUA]) {
+for (const e of [...EXTRA, ...UNIVERSAL, ...VARIATIONS, ...AQUA]) {
   e.day = null;
   EXERCISES.push(e);
   EX_BY_ID[e.id] = e;
@@ -249,6 +250,7 @@ const INFO = {
   'paused-cable-kickback': ['Большая ягодичная', MACHINE.cable],
   'single-arm-cable-row': ['Середина спины, кор', MACHINE.cable],
 };
+for (const e of UNIVERSAL) INFO[e.id] = e.info;
 for (const [id, [muscles, machine]] of Object.entries(INFO)) {
   if (EX_BY_ID[id]) Object.assign(EX_BY_ID[id], { muscles, machine });
 }

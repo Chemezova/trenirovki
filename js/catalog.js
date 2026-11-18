@@ -53,10 +53,19 @@ export function alternatives(exId, { available = Object.keys(EXERCISE_META), exc
     const otherMachine = m.equipment[0] !== me.equipment[0];
     if (otherMachine) score += 4;
     if (v.level === 'caution') score -= 3;
-    options.push({ id, score, level: v.level, reasons: v.reasons, otherMachine, machine: m.equipment[0], muscles: sharedPrimary.length ? sharedPrimary : sharedSecondary });
+    const coverage = sharedPrimary.length / me.primary.length; // какая доля основных мышц упражнения работает и здесь
+    options.push({ id, score, level: v.level, reasons: v.reasons, otherMachine, machine: m.equipment[0], coverage, muscles: sharedPrimary.length ? sharedPrimary : sharedSecondary });
   }
   options.sort((a, b) => b.score - a.score || EXERCISE_META[a.id].tags.length - EXERCISE_META[b.id].tags.length || a.id.localeCompare(b.id));
   return { options, hidden };
+}
+
+// Аналоги по тренажёру: что делать, если нужный тренажёр занят. Другой тренажёр, те же основные мышцы
+// (не менее половины), безопасные первыми. limit — сколько показать.
+export function analogMachines(exId, opts = {}) {
+  const { limit = 4, ...rest } = opts;
+  const { options } = alternatives(exId, rest);
+  return options.filter((o) => o.otherMachine && o.coverage >= 0.5).slice(0, limit);
 }
 
 export const muscleNames = (ids) => ids.map((id) => (MUSCLES[id] ? MUSCLES[id].name : id));

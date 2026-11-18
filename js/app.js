@@ -370,6 +370,7 @@ function renderExercises() {
     <h2 class="ex-name">${esc(ex.name)}</h2>
     <p class="set-line"><b>Подход ${Math.min(done.length + 1, target)} из ${target}</b> · ${range.min}–${range.max} повторов${perSide(ex) ? ' на сторону' : ''}</p>
     ${ex.eyeNote ? `<p class="eye-note">${esc(ex.eyeNote)}</p>` : ''}
+    ${canSwap ? analogsHtml(r) : ''}
     <section class="suggest"><div class="sub">Подсказка</div><div class="big-num">${bigSug}</div><p>${esc(sug.reason)}</p>
       ${sug.offerDumbbells ? btn('Перейти на гантели', 'to-dumbbells') : ''}</section>
     ${hist.length ? `<section class="history"><div class="sub">В прошлый раз</div>${hist.map((h) => `<p>${cy.fmtShort(h.date)}: ${h.sets.map((x) => setText(x, unit)).join(', ')}${h.sets.some((x) => x.breathHold) ? ' · трудно дышать' : ''}${h.lightDay ? ' · лёгкий день' : ''}</p>`).join('')}</section>` : ''}
@@ -389,6 +390,19 @@ function renderExercises() {
 
 // Замена доступна в силовой тренировке до первого подхода этого упражнения
 const canSwapEx = (r, ex) => isStrength(r.slot) && !!CAT.verdict(ex.id).known && !r.sets.some((x) => x.exerciseId === ex.id);
+
+// «Занято?» — аналоги на те же мышцы с другим тренажёром, тап заменяет упражнение
+function analogsHtml(r) {
+  const list = CAT.analogMachines(currentEx().id, {
+    available: availableExerciseIds(r.phase),
+    exclude: r.order,
+    conditionIds: CAT.activeConditions(S.settings, r.wellbeing),
+    limit: 3,
+  });
+  if (!list.length) return '';
+  return `<section class="analogs"><div class="sub">Занято? Аналоги на те же мышцы</div>
+    <div class="chips">${list.map((x) => `<button class="chip" data-a="swap-pick" data-v="${x.id}">${esc(CAT.equipmentName(x.machine))}<small>${esc(EX_BY_ID[x.id].name)}${x.level === 'caution' ? ' · осторожно' : ''}</small></button>`).join('')}</div></section>`;
+}
 
 function swapOptions() {
   const r = S.run;

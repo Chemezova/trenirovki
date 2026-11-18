@@ -428,3 +428,8 @@ button.stat:active { transform: scale(.98); }
 .motivation h2 { margin-bottom: 6px; }
 .motivation .list { margin: 6px 0; }
 .row-btn .badge-care { color: var(--warn-text); }
+
+.analogs { margin: 12px 0; }
+.analogs .chips { margin-top: 6px; }
+.analogs .chip { display: flex; flex-direction: column; align-items: flex-start; text-align: left; border-radius: 14px; }
+.analogs .chip small { font-weight: 450; color: var(--text-2); font-size: .8rem; }

@@ -15,6 +15,7 @@ export const MUSCLES = {
   hamstrings: { name: 'Задняя поверхность бедра', group: 'legs' },
   adductors: { name: 'Внутренняя поверхность бедра', group: 'legs' },
   calves: { name: 'Икры', group: 'legs' },
+  'hip-flexors': { name: 'Сгибатели бедра', group: 'legs' },
   'glutes-max': { name: 'Большая ягодичная', group: 'glutes' },
   'glutes-med': { name: 'Средняя ягодичная', group: 'glutes' },
   lats: { name: 'Широчайшие', group: 'back' },
@@ -47,6 +48,15 @@ export const EQUIPMENT = {
   'pec-deck-machine': { name: 'Тренажёр «бабочка»' },
   'row-station': { name: 'Горизонтальная тяга (скамья и блок)' },
   'chest-supported-row-machine': { name: 'Тренажёр тяги с упором грудью' },
+  'glute-machine': { name: 'Ягодичный тренажёр' },
+  'lying-leg-curl-machine': { name: 'Тренажёр сгибания ног лёжа' },
+  'seated-calf-machine': { name: 'Тренажёр для икр сидя' },
+  'assisted-pullup-machine': { name: 'Гравитрон' },
+  'incline-press-machine': { name: 'Наклонный жимовой тренажёр' },
+  'lateral-raise-machine': { name: 'Тренажёр махов в стороны' },
+  'biceps-curl-machine': { name: 'Тренажёр сгибания рук' },
+  'triceps-machine': { name: 'Тренажёр разгибания рук' },
+  wall: { name: 'Стена' },
 };
 
 // Метки риска — свойства самого упражнения (не человека).
@@ -101,6 +111,7 @@ export const CONDITIONS = {
 // Какие движения считаются «родственными» (для оценки похожести при замене)
 export const PATTERN_FAMILY = {
   squat: 'legs-compound', step: 'legs-compound', lunge: 'legs-compound',
+  'horizontal-push': 'push', 'incline-push': 'push', 'chest-fly': 'push-fly',
   'vertical-pull': 'pull', 'horizontal-pull': 'pull',
   'core-stability': 'core', 'anti-rotation': 'core',
 };
@@ -138,4 +149,21 @@ export const EXERCISE_META = {
   'dumbbell-curl': { pattern: 'elbow-flexion', primary: ['biceps'], secondary: [], equipment: ['dumbbells'], tags: [] },
   'triceps-pushdown': { pattern: 'elbow-extension', primary: ['triceps'], secondary: [], equipment: ['cable-machine'], tags: [] },
   'standing-calf-raise': { pattern: 'calf-raise', primary: ['calves'], secondary: [], equipment: ['support'], tags: [] },
+
+  // Типовые упражнения универсального зала (описания — в exercises-extra.js)
+  'lying-leg-curl': { pattern: 'knee-flexion', primary: ['hamstrings'], secondary: [], equipment: ['lying-leg-curl-machine'], tags: ['lying_prone', 'head_position_cue'] },
+  'glute-kickback-machine': { pattern: 'hip-extension', primary: ['glutes-max'], secondary: ['hamstrings'], equipment: ['glute-machine'], tags: [] },
+  'cable-hip-adduction': { pattern: 'hip-adduction', primary: ['adductors'], secondary: [], equipment: ['cable-machine', 'ankle-cuff'], tags: ['balance_demand'] },
+  'seated-calf-raise': { pattern: 'calf-raise', primary: ['calves'], secondary: [], equipment: ['seated-calf-machine'], tags: [] },
+  'assisted-pullup': { pattern: 'vertical-pull', primary: ['lats'], secondary: ['biceps'], equipment: ['assisted-pullup-machine'], tags: ['breath_hold_risk'] },
+  'straight-arm-pulldown': { pattern: 'lat-isolation', primary: ['lats'], secondary: [], equipment: ['cable-machine'], tags: ['head_position_cue'] },
+  'reverse-pec-deck': { pattern: 'rear-delt-pull', primary: ['rear-delts'], secondary: ['mid-back'], equipment: ['pec-deck-machine'], tags: [] },
+  'cable-chest-fly': { pattern: 'chest-fly', primary: ['chest'], secondary: ['front-delts'], equipment: ['cable-machine'], tags: ['balance_demand'] },
+  'incline-chest-press': { pattern: 'incline-push', primary: ['chest'], secondary: ['front-delts', 'triceps'], equipment: ['incline-press-machine'], tags: ['breath_hold_risk'] },
+  'wall-pushup': { pattern: 'horizontal-push', primary: ['chest'], secondary: ['front-delts', 'triceps'], equipment: ['wall'], tags: [] },
+  'machine-lateral-raise': { pattern: 'lateral-raise', primary: ['side-delts'], secondary: [], equipment: ['lateral-raise-machine'], tags: [] },
+  'cable-curl': { pattern: 'elbow-flexion', primary: ['biceps'], secondary: [], equipment: ['cable-machine'], tags: [] },
+  'machine-biceps-curl': { pattern: 'elbow-flexion', primary: ['biceps'], secondary: [], equipment: ['biceps-curl-machine'], tags: [] },
+  'triceps-extension-machine': { pattern: 'elbow-extension', primary: ['triceps'], secondary: [], equipment: ['triceps-machine'], tags: [] },
+  'supported-march': { pattern: 'hip-flexion', primary: ['hip-flexors', 'core-deep'], secondary: [], equipment: ['support'], tags: ['balance_demand'] },
 };
