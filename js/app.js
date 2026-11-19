@@ -13,8 +13,9 @@ import {
 } from './data.js';
 
 const $app = document.getElementById('app');
-import { PROGRAMS, programName, isStrength, programExercises, aquaPlan, availableExerciseIds } from './programs.js';
+import { PROGRAMS, programName, isStrength, programExercises, aquaPlan, availableExerciseIds, CUSTOM_SLOT } from './programs.js';
 import * as CAT from './catalog.js';
+import * as CP from './catalog-plan.js';
 
 // ---------- утилиты ----------
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -185,14 +186,14 @@ function ensureInputs() {
   S.ui = { key, weight: prevSameUnit ? prev.weight : sug.weight, reps, breath: false, sug };
 }
 
-async function startSession(slot, walked, gymKind = 'full', finisher = 'pool') {
+async function startSession(slot, walked, gymKind = 'full', finisher = 'pool', customOrder = null) {
   const date = cy.today();
   const week = cy.weekOf(date, S.settings.startDate, S.settings.shifts);
   const phase = cy.trainingPhase(week);
   const r = {
     id: uid(), cycleId: 'c1', slot, day: slot, date, plannedDate: date, week, phase, intro: week === 0, gymKind, finisher,
     status: 'in_progress', statusManual: false, checkInAt: nowISO(), sets: [], lightDay: !!(PROGRAMS[slot] && PROGRAMS[slot].light), aborted: false,
-    stage: 'wellbeing', wellbeing: {}, order: isStrength(slot) ? exercisesFor(slot, phase).map((e) => e.id) : [],
+    stage: 'wellbeing', wellbeing: {}, order: customOrder || (isStrength(slot) ? exercisesFor(slot, phase).map((e) => e.id) : []),
     skipped: [], current: 0, rest: null, timer: null, note: '',
   };
   if (walked) await addActivity({ kind: 'walk', commute: 'to', distanceKm: S.settings.commuteKm, sessionId: r.id });
@@ -1060,6 +1061,16 @@ const A = {
   'cat-rm': async (v) => { S.settings.mySet = (S.settings.mySet || []).filter((x) => x !== v); await saveSettings(); render(); },
   'cat-up': async (v) => { await moveInSet(v, -1); },
   'cat-down': async (v) => { await moveInSet(v, 1); },
+  'cat-start': () => {
+    if (S.run) { A.resume(); return; }
+    const week = cy.weekOf(cy.today(), S.settings.startDate, S.settings.shifts);
+    const { order, dropped } = CP.workoutFromSet(S.settings.mySet || [], availableExerciseIds(cy.trainingPhase(week)));
+    if (!order.length) return;
+    snd.unlock();
+    S.overlay = null;
+    const warn = dropped.length ? `Не вошло в тренировку: ${dropped.length} (пока недоступно в этой фазе цикла).` : '';
+    startSession(CUSTOM_SLOT, false, 'gym', 'pool', order).then(() => { if (warn && S.run) { S.run.warn = warn; saveRun(); render(); } });
+  },
   'cat-clear': async () => { S.settings.mySet = []; await saveSettings(); render(); },
   swap: () => { if (canSwapEx(S.run, currentEx())) { S.overlay = { type: 'swap' }; render(); } },
   'swap-pick': async (v) => {

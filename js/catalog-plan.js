@@ -220,3 +220,18 @@ export function historyBalance(sessions, today, { days = 14 } = {}) {
   }
   return { days, sessions: inRange.length, total: all.total, shares, perSession: per, warnings };
 }
+
+// «Мой сет» → тренировка: убираем повторы, неизвестные и ещё не открытые в этой фазе упражнения.
+// available — id, доступные сейчас (programs.availableExerciseIds). Порядок сохраняется; dropped — что не вошло.
+export function workoutFromSet(ids = [], available = []) {
+  const seen = new Set();
+  const order = [];
+  const dropped = [];
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    if (EXERCISE_META[id] && available.includes(id)) order.push(id);
+    else dropped.push(id);
+  }
+  return { order, dropped };
+}

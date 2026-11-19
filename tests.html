@@ -8,10 +8,10 @@
 <script type="module">
 import * as cy from './js/cycle.js';
 import { suggest } from './js/progression.js';
-import { programExercises, upcomingSwaps, aquaPlan, availableExerciseIds } from './js/programs.js';
+import { programName, isStrength, programExercises, upcomingSwaps, aquaPlan, availableExerciseIds } from './js/programs.js';
 import { EXERCISES, EX_BY_ID } from './js/data.js';
 import { activeConditions, verdict, alternatives, analogMachines } from './js/catalog.js';
-import { pairNote, pairsFor, suggestFor, setAnalysis, historyBalance, roleOf, regionOf, isBack, isPress, PAIR_REST } from './js/catalog-plan.js';
+import { pairNote, pairsFor, suggestFor, setAnalysis, historyBalance, workoutFromSet, roleOf, regionOf, isBack, isPress, PAIR_REST } from './js/catalog-plan.js';
 import { EXERCISE_META, MUSCLES, EQUIPMENT, RISK_TAGS, CONDITIONS } from './js/catalog-data.js';
 import { parseHealth, stepsToKm, kmToSteps, walkSteps, sessionPoolMin, swimMinutesOn, clubVisitDates, visitCounts, walkTotals, stepsByDay, stepsByWeek, healthInfo, hoursShortText, backupStatus } from './js/stats.js';
 import { S } from './js/state.js';
@@ -405,6 +405,11 @@ eq('сет: время — подходы × (работа + отдых)', setA(
 eq('сет: пары идут по порядку', setA(BALANCED).pairs.map((x) => x.a + '>' + x.b), ['goblet-box-squat>seated-leg-curl', 'seated-leg-curl>lat-pulldown', 'lat-pulldown>chest-press', 'chest-press>dead-bug']);
 eq('сет: неизвестное упражнение пропускается', setA(['aqua-squat', ...BALANCED]).count, 5);
 
+const wfs = workoutFromSet(['cable-kickback', 'cable-kickback', 'нет-такого', 'lateral-raise'], ['cable-kickback', 'lateral-raise']);
+eq('сет → тренировка: порядок сохраняется, повторы и неизвестные убираются', [wfs.order, wfs.dropped], [['cable-kickback', 'lateral-raise'], ['нет-такого']]);
+eq('сет → тренировка: недоступное в этой фазе отбрасывается', workoutFromSet(['cable-kickback', 'lateral-raise'], ['lateral-raise']).dropped, ['cable-kickback']);
+eq('сет → тренировка: пустой сет — пустая тренировка', workoutFromSet([], ['lateral-raise']).order, []);
+eq('«Мой сет» — силовая программа с названием', [isStrength('custom'), programName('custom')], [true, 'Мой сет']);
 const mkS = (date, ids, n = 3) => ({ date, sets: ids.flatMap((exerciseId) => Array.from({ length: n }, () => ({ exerciseId, isWarmup: false }))) });
 const GL = ['cable-kickback', 'paused-cable-kickback', 'hip-abduction', 'cable-hip-abduction'];
 const histB = (sessions, today = '2026-11-18') => historyBalance(sessions, today);

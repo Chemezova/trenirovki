@@ -942,6 +942,7 @@ function catSetCard() {
     ${a.count < 3 ? '<p class="sub">Добавь ещё упражнения: с трёх штук приложение начнёт подсказывать, что добавить или убрать.</p>' : ''}
     ${a.issues.map(issue).join('')}
     ${a.balanced && !a.issues.length ? '<p class="issue issue-ok">Сет сбалансирован: есть ноги, спина, грудь или плечи и кор, перекосов не видно.</p>' : ''}
+    ${ids.length ? btn('Начать тренировку по сету', 'cat-start', { cls: 'btn-primary' }) : ''}
     ${btn('Очистить сет', 'cat-clear')}</section>`;
 }
 

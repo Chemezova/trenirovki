@@ -348,6 +348,7 @@ export function upcomingSwaps(id, phase) {
   return Object.entries(p.phaseSwaps).map(([from, to]) => ({ from: EX_BY_ID[from], to: EX_BY_ID[to] }));
 }
 
-export const programName = (id) => (PROGRAMS[id] ? PROGRAMS[id].name : id === 'pool' ? 'Бассейн' : 'Клуб');
-export const isStrength = (id) => !!PROGRAMS[id] && PROGRAMS[id].kind === 'gym';
+export const CUSTOM_SLOT = 'custom'; // тренировка из «Моего сета» (каталог), не из плана
+export const programName = (id) => (PROGRAMS[id] ? PROGRAMS[id].name : id === 'pool' ? 'Бассейн' : id === CUSTOM_SLOT ? 'Мой сет' : 'Клуб');
+export const isStrength = (id) => id === CUSTOM_SLOT || (!!PROGRAMS[id] && PROGRAMS[id].kind === 'gym');
 export const MIX_IDS = FOLDERS.find((f) => f.id === 'mix').programs;
