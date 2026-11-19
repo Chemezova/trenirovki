@@ -235,3 +235,19 @@ export function workoutFromSet(ids = [], available = []) {
   }
   return { order, dropped };
 }
+
+// ---------- Суперсет в тренировке: два упражнения по очереди, между ними короткий отдых ----------
+export const pairRestSec = (baseRest = 90) => (baseRest > 60 ? 50 : 35);
+
+// Можно ли ставить в суперсет: только пары с коротким отдыхом (противоположные мышцы, верх и низ, кор)
+export const canSuperset = (aId, bId, opts) => { const n = pairNote(aId, bId, opts); return !!n && n.rest === 'short'; };
+
+// Что делать после подхода упражнения exId в суперсете pair = { a, b }.
+// isFinished(id) считается уже после записи подхода. null — суперсет не действует, дальше обычный порядок.
+// short: true — после A сразу идёт B с коротким отдыхом; false — после B отдых полный, и снова A.
+export function supersetStep(pair, exId, isFinished) {
+  if (!pair || (exId !== pair.a && exId !== pair.b)) return null;
+  if (exId === pair.a && !isFinished(pair.b)) return { next: pair.b, short: true };
+  if (exId === pair.b && !isFinished(pair.a)) return { next: pair.a, short: false };
+  return null;
+}

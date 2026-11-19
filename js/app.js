@@ -386,7 +386,27 @@ function renderExercises() {
     ${canWarmup ? btn(`Разминочный подход: 10 × ${esc(fmtWeight(roundToStep(sug.weight / 2, stepFor(ex)), unit))}`, 'warmup-set') : ''}
     ${isMachine ? `<label class="field">Настройка тренажёра<input type="text" data-f="seat" value="${esc(exSet(ex).seat || '')}" placeholder="сиденье 4, валик 2"></label>` : ''}
     <div class="grid2">${btn('Техника', 'tech')}${btn('Список', 'list')}${btn('Отложить в конец', 'postpone')}${btn('Пропустить', 'skip-ex')}</div>
+    ${pairBlock(ex)}
     ${canSwap ? btn('Заменить другим упражнением', 'swap') : ''}`;
+}
+
+// Суперсет: кнопка «в паре со следующим» (пока по этим двум упражнениям нет подходов) и строка о действующей паре
+function pairBlock(ex) {
+  const r = S.run;
+  const baseRest = cy.PHASES[r.phase].rest;
+  const untouched = (id) => !r.sets.some((x) => x.exerciseId === id && !x.isWarmup);
+  if (r.pair && (r.pair.a === ex.id || r.pair.b === ex.id)) {
+    const other = EX_BY_ID[r.pair.a === ex.id ? r.pair.b : r.pair.a];
+    const canOff = untouched(r.pair.a) && untouched(r.pair.b);
+    return `<section class="pair-live"><b>Суперсет с «${esc(other.name)}»</b><span class="sub">После подхода сразу идёшь на второе упражнение, отдых между ними ${CP.pairRestSec(baseRest)} с; после второго — полный отдых.</span>
+      <span class="note">${esc(CP.PAIR_REST_CARE)}</span>${canOff ? btn('Отменить суперсет', 'pair-off', { cls: 'btn-link' }) : ''}</section>`;
+  }
+  if (r.pair || !untouched(ex.id)) return '';
+  const ni = nextExerciseIndex(r.current);
+  if (ni == null) return '';
+  const nextId = r.order[ni];
+  if (!untouched(nextId) || !CP.canSuperset(ex.id, nextId, { baseRest })) return '';
+  return `<section class="pair-offer"><span class="sub">С «${esc(EX_BY_ID[nextId].name)}» получится хорошая пара: можно по очереди, с коротким отдыхом.</span>${btn('Суперсет со следующим', 'pair-on')}</section>`;
 }
 
 // Замена доступна в силовой тренировке до первого подхода этого упражнения
@@ -1021,13 +1041,19 @@ const A = {
     r.sets.push({ exerciseId: ex.id, setIndex: idx, weight: S.ui.weight, unit: unitFor(ex), reps: S.ui.reps, breathHold: !!S.ui.breath, doneAt: nowISO() });
     const target = setsTarget();
     let nextText;
-    if (idx + 1 >= target) {
+    let restSec = cy.PHASES[r.phase].rest;
+    const ss = CP.supersetStep(r.pair, ex.id, (id) => exFinished(id));
+    if (ss) {
+      r.current = r.order.indexOf(ss.next);
+      if (ss.short) restSec = CP.pairRestSec(restSec);
+      nextText = `Теперь ${EX_BY_ID[ss.next].name}`;
+    } else if (idx + 1 >= target) {
       const next = nextExerciseIndex(r.current);
       if (next == null) nextText = 'Упражнения закончены';
       else { r.current = next; nextText = `Следующее упражнение — ${EX_BY_ID[r.order[next]].name}`; }
     } else nextText = `Подход ${idx + 2} из ${target}`;
     snd.unlock();
-    r.rest = mkTimer('rest', [{ label: 'Отдых', sec: cy.PHASES[r.phase].rest }], { endSay: `Отдых окончен. ${nextText}` });
+    r.rest = mkTimer('rest', [{ label: ss && ss.short ? 'Короткий отдых между упражнениями пары' : 'Отдых', sec: restSec }], { endSay: `Отдых окончен. ${nextText}` });
     S.ui = {};
     await saveRun(); window.scrollTo(0, 0); render();
   },
@@ -1049,6 +1075,15 @@ const A = {
     await saveRun(); render();
   },
   'rest-plus': async () => { const t = S.run.rest; if (t) { t.segments[0].sec += 15; t.warned = false; } await saveRun(); render(); },
+  'pair-on': async () => {
+    const r = S.run; const ex = currentEx(); const ni = nextExerciseIndex(r.current);
+    if (ni == null) return;
+    const b = r.order[ni];
+    if (!CP.canSuperset(ex.id, b, { baseRest: cy.PHASES[r.phase].rest })) return;
+    r.pair = { a: ex.id, b };
+    await saveRun(); render();
+  },
+  'pair-off': async () => { S.run.pair = null; await saveRun(); render(); },
   'rest-skip': async () => { S.run.rest = null; await saveRun(); render(); },
   list: () => { S.overlay = { type: 'list' }; render(); },
   tech: () => { S.overlay = { type: 'tech' }; render(); },

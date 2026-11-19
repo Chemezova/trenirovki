@@ -460,3 +460,6 @@ button.stat:active { transform: scale(.98); }
 .issue-important { background: var(--warn-bg); color: var(--warn-text); }
 .issue-ok { background: rgba(80,140,100,.15); }
 .chip small { display: block; font-weight: 450; opacity: .75; font-size: .75rem; }
+
+.pair-offer, .pair-live { display: grid; gap: 8px; margin: 12px 0; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.pair-live > b { color: var(--text); }
