@@ -433,3 +433,30 @@ button.stat:active { transform: scale(.98); }
 .analogs .chips { margin-top: 6px; }
 .analogs .chip { display: flex; flex-direction: column; align-items: flex-start; text-align: left; border-radius: 14px; }
 .analogs .chip small { font-weight: 450; color: var(--text-2); font-size: .8rem; }
+
+/* Каталог */
+.cat-filters { margin: 10px 0; }
+.cat-h { margin: 16px 0 6px; font-size: .95rem; }
+.cat-row { display: flex; align-items: stretch; gap: 6px; margin-bottom: 6px; }
+.cat-main { flex: 1; min-width: 0; text-align: left; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); color: inherit; font: inherit; }
+.cat-name { font-weight: 650; }
+.cat-meta { font-size: .8rem; color: var(--text-2); }
+.cat-add[aria-pressed="true"] { background: var(--sage); color: var(--on-primary); }
+.bal { display: grid; gap: 6px; margin: 8px 0; }
+.bal-row { display: grid; grid-template-columns: 84px 1fr 40px; gap: 8px; align-items: center; font-size: .85rem; }
+.bal-row b { text-align: right; }
+.bal-bar { height: 8px; border-radius: 4px; background: rgba(127,127,127,.2); overflow: hidden; }
+.bal-bar i { display: block; height: 100%; background: var(--sage); }
+.set-list { margin: 8px 0; }
+.set-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+.set-n { width: 24px; height: 24px; border-radius: 12px; display: grid; place-items: center; background: var(--sage); color: var(--on-primary); font-size: .8rem; font-weight: 700; flex: none; }
+.set-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.set-name small { color: var(--text-2); }
+.pair { margin: 2px 0 2px 32px; padding: 6px 10px; border-left: 3px solid var(--sage); font-size: .82rem; color: var(--text-2); }
+.pair-normal { border-left-color: rgba(127,127,127,.5); }
+.pair p { margin: 2px 0 0; }
+.issue { margin: 8px 0; padding: 10px 12px; border-radius: 12px; background: rgba(127,127,127,.12); }
+.issue p { margin: 0 0 6px; }
+.issue-important { background: var(--warn-bg); color: var(--warn-text); }
+.issue-ok { background: rgba(80,140,100,.15); }
+.chip small { display: block; font-weight: 450; opacity: .75; font-size: .75rem; }

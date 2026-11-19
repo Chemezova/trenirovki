@@ -1,7 +1,7 @@
 // Общее состояние приложения
 import * as cy from './cycle.js';
 
-export const DEFAULT_SETTINGS = { startDate: cy.DEFAULT_START, shifts: [], voice: true, commuteKm: 4, lastBackupAt: null, goalLossKg: 7, name: 'Елена', profile: 'female', conditions: ['eyes'] };
+export const DEFAULT_SETTINGS = { startDate: cy.DEFAULT_START, shifts: [], voice: true, commuteKm: 4, lastBackupAt: null, goalLossKg: 7, name: 'Елена', profile: 'female', conditions: ['eyes'], mySet: [] };
 
 export const S = {
   screen: 'home',
@@ -22,4 +22,5 @@ export const S = {
   form: {},
   cal: { mode: 'week', week: 0, month: 0, gmonth: 0 },  // gmonth — месяц календаря в «Целях»
   preferSlot: null,
+  cat: { group: 'all', view: 'muscles' },  // экран «Каталог»: фильтр по группе мышц и вид (по мышцам / по тренажёрам)
 };

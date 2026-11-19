@@ -108,6 +108,24 @@ export const CONDITIONS = {
   },
 };
 
+// Группа мышц в винительном падеже («нагрузка на …») — для подсказок
+export const GROUP_ACC = { legs: 'ноги', glutes: 'ягодицы', back: 'спину', shoulders: 'плечи', chest: 'грудь', arms: 'руки', core: 'кор' };
+
+// Роль движения: низ тела, тяга, жим (верх тела) или кор. Нужна, чтобы понять, какие упражнения хорошо идут парой.
+export const PATTERN_ROLE = {
+  squat: 'lower', step: 'lower', lunge: 'lower', 'hip-extension': 'lower', 'hip-abduction': 'lower', 'hip-adduction': 'lower',
+  'knee-extension': 'lower', 'knee-flexion': 'lower', 'calf-raise': 'lower', 'hip-flexion': 'lower',
+  'vertical-pull': 'pull', 'horizontal-pull': 'pull', 'rear-delt-pull': 'pull', 'lat-isolation': 'pull', 'elbow-flexion': 'pull',
+  'horizontal-push': 'push', 'incline-push': 'push', 'chest-fly': 'push', 'lateral-raise': 'push', 'elbow-extension': 'push',
+  'core-stability': 'core', 'anti-rotation': 'core',
+};
+
+// Пары движений-«противников»: одна мышца работает, пока другая отдыхает
+export const ANTAGONIST_PATTERNS = [
+  ['knee-extension', 'knee-flexion'], ['hip-abduction', 'hip-adduction'], ['elbow-flexion', 'elbow-extension'],
+  ['horizontal-push', 'horizontal-pull'], ['chest-fly', 'rear-delt-pull'], ['incline-push', 'vertical-pull'], ['horizontal-push', 'vertical-pull'],
+];
+
 // Какие движения считаются «родственными» (для оценки похожести при замене)
 export const PATTERN_FAMILY = {
   squat: 'legs-compound', step: 'legs-compound', lunge: 'legs-compound',

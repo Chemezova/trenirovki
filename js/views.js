@@ -5,7 +5,10 @@ import * as P from './plan.js';
 import * as ST from './stats.js';
 import { esc, dec, btn, chip, icon, stars, heroArt, quoteOf, barChart, lineChart } from './ui.js';
 import { HOME_KINDS, SWAPS, TABLE_PROMPT, EX_BY_ID, STRETCHES, poolPlan, SPA_RULES, JOINT_WARMUP, JOINT_WARMUP_SEC, MOTIVATION, MOTIVATION_PROOFS_TITLE, MOTIVATION_NO_PROOFS, MOTIVATION_PM_NOTE } from './data.js';
-import { FOLDERS, PROGRAMS, programName, programExercises, upcomingSwaps, aquaPlan } from './programs.js';
+import { FOLDERS, PROGRAMS, programName, programExercises, upcomingSwaps, aquaPlan, availableExerciseIds } from './programs.js';
+import * as CAT from './catalog.js';
+import * as CP from './catalog-plan.js';
+import { EXERCISE_META, MUSCLES, MUSCLE_GROUPS } from './catalog-data.js';
 import { hasRuVoice } from './sound.js';
 
 const MONTHS_GEN = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
@@ -648,6 +651,7 @@ export function renderPrograms() {
   const bloggers = bloggerFolders();
   return `<header class="page-title"><h1>Программы</h1><button class="icon-btn" data-a="go" data-v="settings" aria-label="Настройки">${icon('gear')}</button></header>
     <p class="sub">${esc(weekLabel(week, phase))}: подходы и повторы в программах — для текущей недели.</p>
+    <section class="card"><h2>${icon('dumbbell', { size: 20 })} Каталог упражнений</h2><p class="sub">Все упражнения по группам мышц и тренажёрам. Собери свой сет: приложение подскажет, чего не хватает, что лишнее и как поставить рядом.</p>${btn('Открыть каталог', 'go', { v: 'catalog' })}</section>
     ${FOLDERS.map(folder).join('')}
     ${bloggers.map((b) => `<section class="card"><h2>${icon('folder', { size: 20 })} ${esc(b.name)}</h2><p class="sub">Видео-комплексы · ${b.list.length}</p>
       <div class="day-list">${b.list.map((v) => {
@@ -882,4 +886,129 @@ export function parseVideoTable(text, source) {
     exercises: g.exercises,
     order: parseInt((g.day.match(/\d+/) || [String(i + 1)])[0], 10),
   }));
+}
+
+
+// ---------- Каталог ----------
+const PAIR_LABEL = { same: 'Одни и те же мышцы', antagonist: 'Противоположные мышцы', alternate: 'Верх и низ тела', core: 'Кор между делом', overlap: 'Общие помогающие мышцы', ok: 'Разные мышцы' };
+const catPhase = () => { const p = currentPhase().phase; return cy.PHASES[p] ? p : 'p3'; };
+const catConds = () => CAT.activeConditions(S.settings, {});
+const exName = (id) => (EX_BY_ID[id] ? EX_BY_ID[id].name : id);
+const equipOf = (id) => CAT.equipmentName(EXERCISE_META[id].equipment[0]);
+const mySetIds = () => (S.settings.mySet || []).filter((id) => EXERCISE_META[id] && EX_BY_ID[id]);
+
+function catBalanceCard() {
+  const r = CP.historyBalance(S.sessions, cy.today());
+  if (!r.total) {
+    return `<section class="card"><h2>Баланс за 14 дней</h2><p class="sub">Пока нет силовых тренировок за последние две недели. Когда появятся, здесь будет видно, на какие группы мышц пришлась нагрузка и нет ли перекоса.</p></section>`;
+  }
+  const rows = Object.keys(MUSCLE_GROUPS).map((g) => {
+    const pct = Math.round(r.shares[g] * 100);
+    return `<div class="bal-row"><span>${esc(MUSCLE_GROUPS[g])}</span><div class="bal-bar"><i style="width:${pct}%"></i></div><b>${pct}%</b></div>`;
+  }).join('');
+  return `<section class="card"><h2>Баланс за 14 дней</h2><p class="sub">Доля подходов по группам мышц, только силовые тренировки в приложении (${r.sessions} шт.).</p>
+    <div class="bal">${rows}</div>
+    ${r.warnings.length ? r.warnings.map((w) => `<p class="issue issue-important">${esc(w.text)}</p>`).join('') : '<p class="note">Перекосов не видно: нагрузка распределена ровно.</p>'}</section>`;
+}
+
+function catSetCard() {
+  const ids = mySetIds();
+  if (!ids.length) {
+    return `<section class="card"><h2>Мой сет</h2><p class="sub">Нажми «+» у упражнения ниже, чтобы собрать свой сет. Когда в нём будет 3 упражнения и больше, появятся подсказки: чего не хватает, что лишнее и как лучше поставить рядом.</p></section>`;
+  }
+  const ph = catPhase();
+  const { week } = currentPhase();
+  const sets = Math.max(2, cy.setsFor(week, ph));
+  const restSec = cy.PHASES[ph].rest;
+  const a = CP.setAnalysis(ids, { available: availableExerciseIds(ph), conditionIds: catConds(), sets, restSec });
+  const items = ids.map((id, i) => {
+    const pair = i > 0 ? a.pairs[i - 1] : null;
+    const note = pair && pair.note;
+    return `${note ? `<div class="pair pair-${note.rest}"><b>${esc(PAIR_LABEL[note.kind])}</b><p>${esc(note.text)}</p>${note.extra.map((x) => `<p>${esc(x)}</p>`).join('')}</div>` : ''}
+      <div class="set-item"><span class="set-n">${i + 1}</span><div class="set-name"><b>${esc(exName(id))}</b><small>${esc(equipOf(id))}</small></div>
+        <button class="icon-btn" data-a="cat-up" data-v="${id}" aria-label="Выше" ${i === 0 ? 'disabled' : ''}>↑</button>
+        <button class="icon-btn" data-a="cat-down" data-v="${id}" aria-label="Ниже" ${i === ids.length - 1 ? 'disabled' : ''}>↓</button>
+        <button class="icon-btn" data-a="cat-rm" data-v="${id}" aria-label="Убрать из сета">${icon('x', { size: 18 })}</button></div>`;
+  }).join('');
+  const anyShort = a.pairs.some((p) => p.note && p.note.rest === 'short');
+  const issue = (i) => `<div class="issue issue-${i.severity}"><p>${esc(i.text)}</p>
+    ${i.type === 'add' && i.suggest.length ? `<div class="chips">${i.suggest.map((id) => `<button class="chip" data-a="cat-add" data-v="${id}">+ ${esc(exName(id))}<small>${esc(equipOf(id))}</small></button>`).join('')}</div>` : ''}
+    ${i.dropId ? btn(`Убрать «${exName(i.dropId)}»`, 'cat-rm', { v: i.dropId }) : ''}</div>`;
+  return `<section class="card"><h2>Мой сет · ${ids.length}</h2>
+    <p class="sub">Примерно ${a.minutes} мин: ${sets} подхода по ~45 с и отдых ${restSec} с. Порядок можно менять стрелками.</p>
+    <div class="set-list">${items}</div>
+    ${anyShort ? `<p class="note">${esc(CP.PAIR_REST_CARE)}</p>` : ''}
+    <h3>${a.issues.length ? 'Что подправить' : 'Разбор'}</h3>
+    ${a.count < 3 ? '<p class="sub">Добавь ещё упражнения: с трёх штук приложение начнёт подсказывать, что добавить или убрать.</p>' : ''}
+    ${a.issues.map(issue).join('')}
+    ${a.balanced && !a.issues.length ? '<p class="issue issue-ok">Сет сбалансирован: есть ноги, спина, грудь или плечи и кор, перекосов не видно.</p>' : ''}
+    ${btn('Очистить сет', 'cat-clear')}</section>`;
+}
+
+function catRow(id, avail) {
+  const m = EXERCISE_META[id];
+  const e = EX_BY_ID[id];
+  const v = CAT.verdict(id, catConds());
+  const inSet = mySetIds().includes(id);
+  const later = !avail.has(id);
+  return `<div class="cat-row"><button class="cat-main" data-a="cat-open" data-v="${id}"><span class="cat-name">${esc(e.name)}</span>
+      <span class="cat-meta">${esc(CAT.equipmentName(m.equipment[0]))} · ${esc(CAT.muscleNames(m.primary).join(', ').toLowerCase())}</span>
+      ${v.level === 'caution' ? `<span class="badge badge-care">осторожно: ${esc(v.reasons[0].why)}</span>` : ''}${later ? `<span class="badge">с фазы «${esc(cy.PHASES[e.fromPhase].name)}»</span>` : ''}</button>
+    <button class="icon-btn cat-add" data-a="cat-toggle" data-v="${id}" aria-pressed="${inSet}" aria-label="${inSet ? 'Убрать из сета' : 'Добавить в сет'}">${icon(inSet ? 'check' : 'plus')}</button></div>`;
+}
+
+export function renderCatalog() {
+  const { group, view } = S.cat;
+  const avail = new Set(availableExerciseIds(catPhase()));
+  const ids = Object.keys(EXERCISE_META).filter((id) => EX_BY_ID[id] && (group === 'all' || CP.groupsOf(id).includes(group)));
+  const byName = (a, b) => exName(a).localeCompare(exName(b), 'ru');
+  let list = '';
+  if (view === 'equipment') {
+    const by = {};
+    for (const id of ids) (by[EXERCISE_META[id].equipment[0]] = by[EXERCISE_META[id].equipment[0]] || []).push(id);
+    list = Object.keys(by).sort((x, y) => CAT.equipmentName(x).localeCompare(CAT.equipmentName(y), 'ru'))
+      .map((eq) => `<h3 class="cat-h">${esc(CAT.equipmentName(eq))}</h3>${by[eq].sort(byName).map((id) => catRow(id, avail)).join('')}`).join('');
+  } else {
+    const key = (id) => { const m = EXERCISE_META[id]; return group === 'all' ? CP.mainGroup(id) : (m.primary.find((x) => MUSCLES[x] && MUSCLES[x].group === group) || m.primary[0]); };
+    const by = {};
+    for (const id of ids) (by[key(id)] = by[key(id)] || []).push(id);
+    const order = group === 'all' ? Object.keys(MUSCLE_GROUPS) : Object.keys(MUSCLES);
+    list = order.filter((k) => by[k]).map((k) => `<h3 class="cat-h">${esc(group === 'all' ? MUSCLE_GROUPS[k] : MUSCLES[k].name)}</h3>${by[k].sort(byName).map((id) => catRow(id, avail)).join('')}`).join('');
+  }
+  const groups = [['all', 'Все'], ...Object.entries(MUSCLE_GROUPS)];
+  return `<header class="page-title"><button class="icon-btn" data-a="go" data-v="back" aria-label="Назад">${icon('back')}</button><h1>Каталог</h1></header>
+    <p class="sub">Упражнения по группам мышц и тренажёрам. Нажми на упражнение: аналоги, если тренажёр занят, и с чем оно хорошо сочетается. «+» добавляет в сет.</p>
+    ${catBalanceCard()}
+    ${catSetCard()}
+    <div class="chips cat-filters">${chip('По мышцам', 'cat-view', 'muscles', view === 'muscles')}${chip('По тренажёрам', 'cat-view', 'equipment', view === 'equipment')}</div>
+    <div class="chips cat-filters">${groups.map(([k, n]) => chip(n, 'cat-group', k, group === k)).join('')}</div>
+    <section class="cat-list">${list || '<p class="sub">Ничего не найдено.</p>'}</section>
+    <p class="note">Подсказки каталога — черновик и не заменяют врача или тренера. Пометки «осторожно» учитывают твои ограничения.</p>`;
+}
+
+export function renderCatalogExercise(id) {
+  const m = EXERCISE_META[id];
+  const e = EX_BY_ID[id];
+  if (!m || !e) return '';
+  const conds = catConds();
+  const ph = catPhase();
+  const avail = availableExerciseIds(ph);
+  const v = CAT.verdict(id, conds);
+  const analogs = CAT.analogMachines(id, { available: avail, conditionIds: conds, limit: 4 });
+  const pairs = CP.pairsFor(id, { available: avail, conditionIds: conds, limit: 4, baseRest: cy.PHASES[ph].rest });
+  const inSet = mySetIds().includes(id);
+  const row = (x, sub) => `<button class="day-item ex-row" data-a="cat-open" data-v="${x}"><div class="di-body"><div class="di-title">${esc(exName(x))}</div><div class="di-meta">${esc(sub)}</div></div></button>`;
+  return `<div class="sheet-head"><h2>${esc(e.name)}</h2><button class="icon-btn" data-a="close" aria-label="Закрыть">${icon('x')}</button></div>
+    <p class="sub">${esc(m.equipment.map(CAT.equipmentName).join(' + '))}</p>
+    <p><b>Работают:</b> ${esc(CAT.muscleNames(m.primary).join(', ').toLowerCase())}${m.secondary.length ? `. <b>Помогают:</b> ${esc(CAT.muscleNames(m.secondary).join(', ').toLowerCase())}` : ''}.</p>
+    ${v.level !== 'ok' ? `<p class="issue issue-important"><b>${v.level === 'avoid' ? 'Нельзя при твоих ограничениях' : 'Осторожно'}:</b> ${esc(v.reasons.map((r) => r.why).join('; '))}.</p>` : ''}
+    ${e.eyeNote ? `<p class="eye-note">${esc(e.eyeNote)}</p>` : ''}
+    ${e.setup ? `<h3>Как делать</h3><p>${esc(e.setup)} ${esc(e.movement || '')}</p>` : ''}
+    ${e.mistakes ? `<h3>Частые ошибки</h3><p>${esc(e.mistakes)}</p>` : ''}
+    <h3>Тренажёр занят? Аналоги</h3>
+    ${analogs.length ? `<div class="day-list">${analogs.map((x) => row(x.id, `${CAT.equipmentName(x.machine)}${x.level === 'caution' ? ' · осторожно' : ''}`)).join('')}</div>` : '<p class="sub">Аналогов с другим тренажёром пока нет.</p>'}
+    <h3>Хорошо в паре</h3>
+    ${pairs.length ? `<div class="day-list">${pairs.map((x) => row(x.id, `${PAIR_LABEL[x.kind]} · отдых можно сократить до ${CP.pairRestText(cy.PHASES[ph].rest)}`)).join('')}</div><p class="note">${esc(CP.PAIR_REST_CARE)}</p>` : '<p class="sub">Подходящих пар пока нет.</p>'}
+    ${btn(inSet ? 'Убрать из сета' : 'Добавить в сет', 'cat-toggle', { v: id, cls: inSet ? 'btn-secondary' : 'btn-primary' })}
+    ${btn('Закрыть', 'close')}`;
 }

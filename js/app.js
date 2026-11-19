@@ -606,6 +606,7 @@ function renderOverlay() {
   else if (o.type === 'move') inner = V.renderMoveSheet(o.date);
   else if (o.type === 'cancel') inner = V.renderCancelSheet(o.date);
   else if (o.type === 'video') inner = V.renderVideoSheet(o.id);
+  else if (o.type === 'catex') inner = V.renderCatalogExercise(o.id);
   else if (o.type === 'act') {
     const name = { walk: 'Прогулка', ringfit: 'Ring Fit', circuit: 'Видео-тренировка', yoga: 'Йога', video: 'Видео-тренировка', pool: 'Бассейн', other: 'Активность' }[o.kind] || 'Активность';
     inner = `<div class="sheet-head"><h2>${esc(name)} · ${esc(cy.fmtDate(o.date))}</h2><button class="icon-btn" data-a="act-back" aria-label="Закрыть">${icon('x')}</button></div>
@@ -695,7 +696,7 @@ function renderMain() {
   const screens = {
     home: V.renderHome, calendar: V.renderCalendar, goals: V.renderGoals, settings: V.renderSettings, measure: renderMeasure, homeLog: renderHomeLog,
     videos: V.renderVideos, videoForm: V.renderVideoForm, videoImport: V.renderVideoImport,
-    programs: V.renderPrograms, program: () => V.renderProgram(S.progId),
+    programs: V.renderPrograms, program: () => V.renderProgram(S.progId), catalog: V.renderCatalog,
   };
   const body = (screens[S.screen] || V.renderHome)();
   const active = TABS.some(([id]) => id === S.screen) ? S.screen : prevScreen;
@@ -703,6 +704,17 @@ function renderMain() {
 }
 
 // ---------- действия ----------
+async function moveInSet(id, d) {
+  const l = [...(S.settings.mySet || [])];
+  const i = l.indexOf(id);
+  const j = i + d;
+  if (i < 0 || j < 0 || j >= l.length) return;
+  [l[i], l[j]] = [l[j], l[i]];
+  S.settings.mySet = l;
+  await saveSettings();
+  render();
+}
+
 const refresh = () => render();
 const splitV = (v) => { const i = v.indexOf('|'); return [v.slice(0, i), v.slice(i + 1)]; };
 
@@ -1039,6 +1051,16 @@ const A = {
   'rest-skip': async () => { S.run.rest = null; await saveRun(); render(); },
   list: () => { S.overlay = { type: 'list' }; render(); },
   tech: () => { S.overlay = { type: 'tech' }; render(); },
+  // каталог
+  'cat-group': (v) => { S.cat.group = v; render(); },
+  'cat-view': (v) => { S.cat.view = v; render(); },
+  'cat-open': (v) => { S.overlay = { type: 'catex', id: v }; render(); },
+  'cat-toggle': async (v) => { const l = S.settings.mySet || []; S.settings.mySet = l.includes(v) ? l.filter((x) => x !== v) : [...l, v]; await saveSettings(); render(); },
+  'cat-add': async (v) => { const l = S.settings.mySet || []; if (!l.includes(v)) { S.settings.mySet = [...l, v]; await saveSettings(); } render(); },
+  'cat-rm': async (v) => { S.settings.mySet = (S.settings.mySet || []).filter((x) => x !== v); await saveSettings(); render(); },
+  'cat-up': async (v) => { await moveInSet(v, -1); },
+  'cat-down': async (v) => { await moveInSet(v, 1); },
+  'cat-clear': async () => { S.settings.mySet = []; await saveSettings(); render(); },
   swap: () => { if (canSwapEx(S.run, currentEx())) { S.overlay = { type: 'swap' }; render(); } },
   'swap-pick': async (v) => {
     const r = S.run;

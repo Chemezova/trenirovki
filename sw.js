@@ -21,6 +21,7 @@ const FILES = [
   './js/programs.js',
   './js/catalog.js',
   './js/catalog-data.js',
+  './js/catalog-plan.js',
   './js/exercises-extra.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
