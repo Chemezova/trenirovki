@@ -8,6 +8,7 @@ import { HOME_KINDS, SWAPS, TABLE_PROMPT, EX_BY_ID, STRETCHES, poolPlan, SPA_RUL
 import { FOLDERS, PROGRAMS, programName, programExercises, upcomingSwaps, aquaPlan, availableExerciseIds } from './programs.js';
 import * as CAT from './catalog.js';
 import * as CP from './catalog-plan.js';
+import * as BODY from './body.js';
 import { EXERCISE_META, MUSCLES, MUSCLE_GROUPS } from './catalog-data.js';
 import { hasRuVoice } from './sound.js';
 
@@ -533,7 +534,47 @@ export function renderGoals() {
     ${motivationHtml()}
     ${walkBlock()}
     <section class="card"><h2>Талия, см</h2>${waistChart}</section>
+    ${bodyBlock()}
     <section class="card"><h2>Замеры</h2>${measures.length ? measures.map((m) => `<div class="row-btn"><b>${cy.fmtShort(m.date)}${m.checkpoint != null ? ` · контрольный ${m.checkpoint}` : ''}${m.premenstrual ? ' · непоказательно' : ''}</b><span>${CIRC.filter(([k]) => m[k] != null).map(([k, l]) => `${l} ${dec(m[k])}`).join(' · ')}</span><button class="btn-link danger-link" data-a="del-measure" data-v="${m.id}">Удалить</button></div>`).join('') : '<p class="note">Пока пусто.</p>'}</section>`;
+}
+
+// ---------- состав тела (InBody и подобные приборы) ----------
+const sgn = (v) => (v > 0 ? '+' : v < 0 ? '−' : '') + dec(Math.abs(v));
+const fmtFull = (d) => `${cy.fmtDate(d)} ${d.slice(0, 4)}`;  // с годом: анализы бывают за разные годы
+function bodyBlock() {
+  const rec = BODY.bodyRecords(S.measurements);
+  const add = btn(`${icon('plus', { size: 18 })} Добавить анализ`, 'go', { v: 'body', cls: 'btn-primary' });
+  if (!rec.length) return `<section class="card" id="g-body"><h2>Состав тела</h2><p class="note">Анализ InBody лучше повторять раз в 4 недели, в одинаковых условиях.</p>${add}</section>`;
+  const last = rec[rec.length - 1];
+  const dev = BODY.DEVICES[last.device] || last.device;
+  const ch = BODY.bodyChange(rec, last.device);
+  const due = BODY.bodyDue(rec, cy.today());
+  const parts = [`жир ${dec(last.fatKg)} кг${last.fatPct != null ? ` (${dec(last.fatPct)} %)` : ''}`, `мышцы ${dec(last.muscleKg)} кг`];
+  if (last.visceral != null) parts.push(`висцеральный жир ${last.visceral}`);
+  let zone = '';
+  if (last.device === 'inbody' && last.fatPct != null) {
+    const z = BODY.fatZone(last.fatPct, S.settings.profile);
+    const [lo, hi] = BODY.FAT_PCT_NORM[S.settings.profile] || BODY.FAT_PCT_NORM.female;
+    const need = z === 'above' ? BODY.fatToTarget(last, hi) : null;
+    zone = `<p>${z === 'above' ? `Процент жира выше ориентира ${lo}–${hi} %.` : z === 'in' ? `Процент жира в ориентире ${lo}–${hi} %.` : `Процент жира ниже ориентира ${lo}–${hi} %.`}${need ? ` До верхней границы около ${dec(need)} кг жира при сохранённых мышцах.` : ''}</p>`;
+  }
+  const change = ch
+    ? `<p>С ${fmtFull(ch.from)} (тот же прибор): жир ${ch.fatKg == null ? '—' : sgn(ch.fatKg) + ' кг'}, мышцы ${ch.muscleKg == null ? '—' : sgn(ch.muscleKg) + ' кг'}. Смотри на кг, а не на проценты: проценты прыгают от воды.</p>`
+    : `<p class="note">Это первая запись этого прибора: сравнить пока не с чем. Другие приборы дают другие цифры, поэтому с ними не сравниваем.</p>`;
+  const when = due ? `<p class="note">${due.due ? 'Пора на новый анализ.' : `Следующий анализ около ${fmtFull(due.next)}.`}</p>` : '';
+  const charts = BODY.devicesUsed(rec).map((d) => {
+    const l = BODY.byDevice(rec, d);
+    if (l.length < 2) return '';
+    const t0 = l[0].date;
+    const span = Math.max(1, cy.daysBetween(t0, l[l.length - 1].date));
+    const X = (dt) => cy.daysBetween(t0, dt) / span;
+    return `<h3 class="sheet-sub">Жир, кг · ${esc(BODY.DEVICES[d] || d)}</h3>${lineChart(l.map((m) => ({ x: X(m.date), y: m.fatKg, label: `${fmtFull(m.date)}: ${dec(m.fatKg)} кг` })), { xLabels: [{ x: 0, label: fmtFull(t0) }, { x: 1, label: fmtFull(l[l.length - 1].date) }] })}`;
+  }).join('');
+  const list = [...rec].reverse().map((m) => `<div class="row-btn"><b>${fmtFull(m.date)}</b><span>${esc(BODY.DEVICES[m.device] || m.device)}: жир ${dec(m.fatKg)} кг${m.fatPct != null ? ` (${dec(m.fatPct)} %)` : ''}, мышцы ${dec(m.muscleKg)} кг</span><button class="btn-link danger-link" data-a="del-measure" data-v="${m.id}">Удалить</button></div>`).join('');
+  return `<section class="card" id="g-body"><h2>Состав тела</h2>${add}
+    <p><b>${fmtFull(last.date)} · ${esc(dev)}</b>: ${parts.join(' · ')}.</p>${zone}${change}${when}${charts}
+    <details class="classes"><summary>Все анализы · ${rec.length}</summary>${list}</details>
+    <p class="note">Вес с анализатора (днём, в одежде) в блок «Вес» не добавляется: там остаются твои утренние взвешивания.</p></section>`;
 }
 
 // ---------- настройки ----------

@@ -16,6 +16,7 @@ const $app = document.getElementById('app');
 import { PROGRAMS, programName, isStrength, programExercises, aquaPlan, availableExerciseIds, CUSTOM_SLOT } from './programs.js';
 import * as CAT from './catalog.js';
 import * as CP from './catalog-plan.js';
+import * as BODY from './body.js';
 
 // ---------- утилиты ----------
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -46,6 +47,16 @@ async function load() {
   S.run = sessions.find((s) => s.status === 'in_progress') || null;
   S.sessions = sessions.filter((s) => s.status !== 'in_progress');
   S.measurements = await db.getAll('measurements');
+  // один раз: прошлые анализы состава тела (бланки 2011–2015 и InBody от 21.11.2026); удалённые обратно не возвращаются
+  if (!(await db.kvGet('bodySeedDone'))) {
+    for (const r of BODY.HISTORY_SEED) {
+      if (S.measurements.some((m) => m.id === r.id)) continue;
+      const rec = { ...r, at: `${r.date}T12:00:00.000Z` };
+      await db.put('measurements', rec);
+      S.measurements.push(rec);
+    }
+    await db.kvSet('bodySeedDone', true);
+  }
   S.activities = await db.getAll('activities');
   S.symptoms = await db.getAll('symptoms');
   snd.setVoice(S.settings.voice);
@@ -603,6 +614,22 @@ function renderMeasure() {
     ${btn('Сохранить замер', 'measure-save', { cls: 'btn-primary btn-xl' })}</section>`;
 }
 
+function renderBody() {
+  if (S.form.kind !== 'body') S.form = { kind: 'body', date: cy.today(), device: 'inbody' };
+  const f = S.form;
+  const field = (key, label, mode = 'decimal') => `<label class="field">${label}<input type="text" inputmode="${mode}" data-f="m-${key}" value="${esc(f[key] ?? '')}"></label>`;
+  return `${backHeader('Состав тела')}<section class="card">
+    <p class="sub">Цифры с бланка анализатора. Лучше в одинаковых условиях: то же время дня, до еды и тренировки, не в предменструальные дни.</p>
+    <label class="field">Дата<input type="date" data-f="m-date" value="${esc(f.date)}" max="${cy.today()}"></label>
+    <fieldset><legend>Прибор</legend><div class="chips">${Object.entries(BODY.DEVICES).map(([id, name]) => chip(esc(name), 'b-device', id, f.device === id)).join('')}</div></fieldset>
+    <p class="note">Сравнение идёт только внутри одного прибора: разные приборы дают разные цифры.</p>
+    ${field('bodyKg', 'Вес, кг')}${field('fatKg', 'Жировая масса, кг')}${field('fatPct', 'Процент жира, % (если есть)')}${field('muscleKg', 'Скелетная мускулатура, кг')}
+    ${field('visceral', 'Висцеральный жир, уровень (если есть)', 'numeric')}${field('bmrKcal', 'Основной обмен, ккал (если есть)', 'numeric')}
+    <label class="field">Заметка<input type="text" data-f="m-note" value="${esc(f.note ?? '')}" placeholder="например, после еды"></label>
+    ${f.error ? `<p class="eye-note">${esc(f.error)}</p>` : ''}
+    ${btn('Сохранить анализ', 'body-save', { cls: 'btn-primary btn-xl' })}</section>`;
+}
+
 function renderHomeLog() {
   if (S.form.kind !== 'home') S.form = { kind: 'home', type: S.form.preset && S.form.preset !== 'walk' ? S.form.preset : 'ringfit', minutes: null, km: 5, date: S.form.date || cy.today(), feel: null, breath: false };
   const f = S.form;
@@ -705,7 +732,7 @@ function go(screen) {
   else if (['home', 'calendar', 'goals', 'programs'].includes(S.screen)) prevScreen = S.screen;
   S.screen = screen;
   S.overlay = null;
-  if (!['measure', 'homeLog', 'videoForm', 'videoImport'].includes(screen)) S.form = {};
+  if (!['measure', 'body', 'homeLog', 'videoForm', 'videoImport'].includes(screen)) S.form = {};
   window.scrollTo(0, 0);
   render();
   if (S.focus) {
@@ -717,7 +744,7 @@ function go(screen) {
 
 function renderMain() {
   const screens = {
-    home: V.renderHome, calendar: V.renderCalendar, goals: V.renderGoals, settings: V.renderSettings, measure: renderMeasure, homeLog: renderHomeLog,
+    home: V.renderHome, calendar: V.renderCalendar, goals: V.renderGoals, settings: V.renderSettings, measure: renderMeasure, body: renderBody, homeLog: renderHomeLog,
     videos: V.renderVideos, videoForm: V.renderVideoForm, videoImport: V.renderVideoImport,
     programs: V.renderPrograms, program: () => V.renderProgram(S.progId), catalog: V.renderCatalog,
   };
@@ -744,7 +771,7 @@ const splitV = (v) => { const i = v.indexOf('|'); return [v.slice(0, i), v.slice
 const A = {
   tab: (v) => { prevScreen = v; go(v); },
   go: (v) => {
-    if (v === 'measure') S.form = {};
+    if (v === 'measure' || v === 'body') S.form = {};
     go(v);
   },
   close: () => { S.overlay = null; render(); },
@@ -1248,6 +1275,20 @@ const A = {
     const f = S.form;
     const rec = { id: uid(), cycleId: 'c1', date: f.date, at: nowISO(), checkpoint: cy.checkpointNear(f.date, S.settings.startDate), premenstrual: f.pm === 'yes' };
     for (const k of ['waistCm', 'chestCm', 'bellyNavelCm', 'hipsCm', 'thighCm']) { const n = num(f[k]); if (n != null) rec[k] = n; }
+    await db.put('measurements', rec);
+    S.measurements.push(rec);
+    go('back');
+  },
+  'b-device': (v) => { S.form.device = v; render(); },
+  'body-save': async () => {
+    const f = S.form;
+    const rec = { kind: BODY.BODY_KIND, id: uid(), date: f.date, at: nowISO(), device: f.device };
+    for (const k of ['bodyKg', 'fatKg', 'fatPct', 'muscleKg', 'visceral', 'bmrKcal']) { const n = num(f[k]); if (n != null) rec[k] = n; }
+    if (rec.bodyKg != null && rec.fatKg != null) rec.leanKg = +(rec.bodyKg - rec.fatKg).toFixed(1);
+    if (rec.fatPct == null && rec.bodyKg > 0 && rec.fatKg > 0) rec.fatPct = +((rec.fatKg / rec.bodyKg) * 100).toFixed(1);
+    if (f.note && f.note.trim()) rec.note = f.note.trim();
+    const err = BODY.checkBodyRecord(rec);
+    if (err) { f.error = err; render(); return; }
     await db.put('measurements', rec);
     S.measurements.push(rec);
     go('back');

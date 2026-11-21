@@ -14,6 +14,7 @@ import { needsEquipment, withoutEquipment, activeConditions, verdict, alternativ
 import { pairNote, pairsFor, suggestFor, setAnalysis, historyBalance, workoutFromSet, supersetStep, canSuperset, pairRestSec, roleOf, regionOf, isBack, isPress, PAIR_REST } from './js/catalog-plan.js';
 import { EXERCISE_META, MUSCLES, EQUIPMENT, RISK_TAGS, CONDITIONS } from './js/catalog-data.js';
 import { parseHealth, stepsToKm, kmToSteps, walkSteps, sessionPoolMin, swimMinutesOn, clubVisitDates, visitCounts, walkTotals, stepsByDay, stepsByWeek, healthInfo, hoursShortText, backupStatus } from './js/stats.js';
+import { bodyRecords, bodyChange, bodyDue, fatToTarget, fatZone, checkBodyRecord, devicesUsed, byDevice, HISTORY_SEED } from './js/body.js';
 import { S } from './js/state.js';
 import { historyInUnit } from './js/progression.js';
 
@@ -440,6 +441,25 @@ eq('баланс: доли в сумме дают единицу', Math.abs(Obje
 eq('баланс: давно не было спины — подсказка', (() => { const r = histB([mkS('2026-11-10', GL), mkS('2026-11-16', ['goblet-box-squat', 'leg-extension', 'seated-leg-curl', 'chest-press', 'dead-bug'])]); return hbTypes(r).includes('missing:back'); })(), true);
 eq('доступные упражнения: фаза 1 без вариаций и воды', [availableExerciseIds('p1').includes('goblet-box-squat'), availableExerciseIds('p1').includes('tempo-box-squat'), availableExerciseIds('p1').includes('aqua-squat')], [true, false, false]);
 eq('доступные упражнения: «Закрепление» с вариациями', availableExerciseIds('p3').includes('tempo-box-squat'), true);
+
+
+// состав тела
+const BR = bodyRecords([{ id: 'w', weightKg: 60 }, ...HISTORY_SEED].reverse());
+eq('состав тела: берутся только записи анализа, от старых к новым', BR.map((r) => r.date), ['2011-08-08', '2013-04-11', '2015-01-27', '2026-11-21']);
+eq('состав тела: приборы различаются', devicesUsed(BR), ['vesna', 'inbody']);
+eq('состав тела: изменение считается внутри старого прибора', (() => { const c = bodyChange(BR, 'vesna'); return [c.from, c.to, c.fatKg, c.muscleKg, c.bodyKg]; })(), ['2013-04-11', '2015-01-27', 2, 0.5, 3]);
+eq('состав тела: одна запись прибора — сравнивать не с чем', bodyChange(BR, 'inbody'), null);
+eq('состав тела: InBody не сравнивается со старым прибором', bodyChange(BR.filter((r) => r.device === 'inbody' || r.date === '2015-01-27'), 'inbody'), null);
+eq('состав тела: следующий анализ через 28 дней', (() => { const d = bodyDue(BR, '2026-12-01'); return [d.next, d.daysLeft, d.due]; })(), ['2026-12-19', 18, false]);
+eq('состав тела: пора, когда прошло 28 дней', bodyDue(BR, '2026-12-19').due, true);
+eq('состав тела: пусто — напоминания нет', bodyDue([], '2026-12-01'), null);
+eq('состав тела: до 28 % при тех же мышцах около 5,4 кг жира', fatToTarget(HISTORY_SEED[3], 28), 5.4);
+eq('состав тела: ниже цели — ноль, нет данных — null', [fatToTarget({ bodyKg: 60, fatKg: 12 }, 28), fatToTarget({ bodyKg: 60 }, 28)], [0, null]);
+eq('состав тела: зона по проценту жира', [fatZone(33.7), fatZone(25), fatZone(15)], ['above', 'in', 'below']);
+eq('состав тела: проверка записи', [checkBodyRecord(HISTORY_SEED[3]), checkBodyRecord({ ...HISTORY_SEED[3], fatKg: 70 }), checkBodyRecord({ ...HISTORY_SEED[3], fatPct: 20 }), checkBodyRecord({ ...HISTORY_SEED[3], device: 'x' }), checkBodyRecord({ ...HISTORY_SEED[3], muscleKg: 0 })], [null, 'Жир не может быть больше веса', 'Процент жира не сходится с кг: проверь цифры', 'Выбери прибор', 'Нужны вес, жир и мышцы в кг']);
+eq('состав тела: бланки внесены без ошибок', HISTORY_SEED.map(checkBodyRecord), [null, null, null, null]);
+eq('состав тела: у записей анализа нет полей веса и талии, которые читают «Вес» и «Талия»', HISTORY_SEED.filter((r) => ['weightKg', 'waistCm', 'bellyNavelCm', 'hipsCm', 'chestCm', 'thighCm', 'checkpoint'].some((k) => k in r)).length, 0);
+eq('состав тела: все записи помечены kind body', HISTORY_SEED.every((r) => r.kind === 'body'), true);
 
 out.innerHTML = `<b>${fail ? `<span class="fail">Провалено: ${fail}</span>` : '<span class="ok">Все тесты прошли</span>'} · пройдено ${pass}</b>\n\n` + out.innerHTML;
 document.title = fail ? `FAIL ${fail}` : `OK ${pass}`;
