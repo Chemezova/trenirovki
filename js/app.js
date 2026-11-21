@@ -414,21 +414,23 @@ const canSwapEx = (r, ex) => isStrength(r.slot) && !!CAT.verdict(ex.id).known &&
 
 // «Занято?» — аналоги на те же мышцы с другим тренажёром, тап заменяет упражнение
 function analogsHtml(r) {
+  const noEq = S.settings.noEquipment || [];
+  const needs = CAT.needsEquipment(currentEx().id, noEq);
   const list = CAT.analogMachines(currentEx().id, {
-    available: availableExerciseIds(r.phase),
+    available: CAT.withoutEquipment(availableExerciseIds(r.phase), noEq),
     exclude: r.order,
     conditionIds: CAT.activeConditions(S.settings, r.wellbeing),
-    limit: 3,
+    limit: needs ? 4 : 3,
   });
   if (!list.length) return '';
-  return `<section class="analogs"><div class="sub">Занято? Аналоги на те же мышцы</div>
+  return `<section class="analogs"><div class="sub">${needs ? 'Без коврика: варианты на те же мышцы' : 'Занято? Аналоги на те же мышцы'}</div>
     <div class="chips">${list.map((x) => `<button class="chip" data-a="swap-pick" data-v="${x.id}">${esc(CAT.equipmentName(x.machine))}<small>${esc(EX_BY_ID[x.id].name)}${x.level === 'caution' ? ' · осторожно' : ''}</small></button>`).join('')}</div></section>`;
 }
 
 function swapOptions() {
   const r = S.run;
   return CAT.alternatives(currentEx().id, {
-    available: availableExerciseIds(r.phase),
+    available: CAT.withoutEquipment(availableExerciseIds(r.phase), S.settings.noEquipment || []),
     exclude: r.order,
     conditionIds: CAT.activeConditions(S.settings, r.wellbeing),
   });
@@ -1262,6 +1264,11 @@ const A = {
   },
 
   // настройки
+  'equip-toggle': async (v) => {
+    const l = S.settings.noEquipment || [];
+    S.settings.noEquipment = l.includes(v) ? l.filter((x) => x !== v) : [...l, v];
+    await saveSettings(); render();
+  },
   voice: async (v) => { S.settings.voice = v === 'on'; snd.setVoice(S.settings.voice); await saveSettings(); render(); },
   'test-sound': () => { snd.unlock(); snd.announce('Проверка. Отдых окончен. Подход 2 из 3', 'end'); },
   export: () => doExport(),

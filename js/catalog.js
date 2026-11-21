@@ -68,5 +68,10 @@ export function analogMachines(exId, opts = {}) {
   return options.filter((o) => o.otherMachine && o.coverage >= 0.5).slice(0, limit);
 }
 
+// Что есть в зале у человека: unavailable — id инвентаря, которым неудобно или нельзя пользоваться (например, 'mat').
+// Убирает упражнения, которым он нужен.
+export const needsEquipment = (exId, unavailable = []) => !!EXERCISE_META[exId] && EXERCISE_META[exId].equipment.some((e) => unavailable.includes(e));
+export const withoutEquipment = (ids, unavailable = []) => (unavailable.length ? ids.filter((id) => !needsEquipment(id, unavailable)) : ids);
+
 export const muscleNames = (ids) => ids.map((id) => (MUSCLES[id] ? MUSCLES[id].name : id));
 export const equipmentName = (id) => (EQUIPMENT[id] ? EQUIPMENT[id].name : id);

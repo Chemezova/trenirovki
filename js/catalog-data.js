@@ -29,6 +29,7 @@ export const MUSCLES = {
   triceps: { name: 'Трицепс', group: 'arms' },
   'core-deep': { name: 'Глубокие мышцы живота', group: 'core' },
   obliques: { name: 'Косые мышцы живота', group: 'core' },
+  abs: { name: 'Прямая мышца живота (пресс)', group: 'core' },
 };
 
 // Тренажёры и инвентарь. У упражнения первым в списке стоит главный.
@@ -57,6 +58,8 @@ export const EQUIPMENT = {
   'biceps-curl-machine': { name: 'Тренажёр сгибания рук' },
   'triceps-machine': { name: 'Тренажёр разгибания рук' },
   wall: { name: 'Стена' },
+  'captain-chair': { name: 'Римский стул (упор на локтях)' },
+  'ab-crunch-machine': { name: 'Тренажёр для пресса' },
 };
 
 // Метки риска — свойства самого упражнения (не человека).
@@ -78,6 +81,7 @@ export const RISK_TAGS = {
   wrist_load: { name: 'Нагрузка на запястья' },
   neck_load: { name: 'Нагрузка на шею' },
   balance_demand: { name: 'Нужен баланс' },
+  shoulder_load: { name: 'Нагрузка на плечевые суставы' },
 };
 
 // Ограничения. kind: 'condition' — постоянное (живёт в настройках),
@@ -117,7 +121,7 @@ export const PATTERN_ROLE = {
   'knee-extension': 'lower', 'knee-flexion': 'lower', 'calf-raise': 'lower', 'hip-flexion': 'lower',
   'vertical-pull': 'pull', 'horizontal-pull': 'pull', 'rear-delt-pull': 'pull', 'lat-isolation': 'pull', 'elbow-flexion': 'pull',
   'horizontal-push': 'push', 'incline-push': 'push', 'chest-fly': 'push', 'lateral-raise': 'push', 'elbow-extension': 'push',
-  'core-stability': 'core', 'anti-rotation': 'core',
+  'core-stability': 'core', 'anti-rotation': 'core', rotation: 'core', 'lateral-flexion': 'core', carry: 'core', 'leg-raise': 'core', 'trunk-flexion': 'core', 'upright-row': 'pull',
 };
 
 // Пары движений-«противников»: одна мышца работает, пока другая отдыхает
@@ -131,7 +135,7 @@ export const PATTERN_FAMILY = {
   squat: 'legs-compound', step: 'legs-compound', lunge: 'legs-compound',
   'horizontal-push': 'push', 'incline-push': 'push', 'chest-fly': 'push-fly',
   'vertical-pull': 'pull', 'horizontal-pull': 'pull',
-  'core-stability': 'core', 'anti-rotation': 'core',
+  'core-stability': 'core', 'anti-rotation': 'core', rotation: 'core', 'lateral-flexion': 'core', carry: 'core', 'leg-raise': 'core', 'trunk-flexion': 'core',
 };
 
 // Свойства упражнений по их id из data.js / programs.js (аквааэробика сюда не входит).
@@ -184,4 +188,18 @@ export const EXERCISE_META = {
   'machine-biceps-curl': { pattern: 'elbow-flexion', primary: ['biceps'], secondary: [], equipment: ['biceps-curl-machine'], tags: [] },
   'triceps-extension-machine': { pattern: 'elbow-extension', primary: ['triceps'], secondary: [], equipment: ['triceps-machine'], tags: [] },
   'supported-march': { pattern: 'hip-flexion', primary: ['hip-flexors', 'core-deep'], secondary: [], equipment: ['support'], tags: ['balance_demand'] },
+
+  // Гантели, обратные отжимания, пресс без коврика (v25)
+  'dumbbell-forward-lunge': { pattern: 'lunge', primary: ['quads', 'glutes-max'], secondary: ['hamstrings'], equipment: ['dumbbells', 'support'], tags: ['balance_demand'] },
+  'dumbbell-reverse-lunge': { pattern: 'lunge', primary: ['glutes-max', 'quads'], secondary: ['hamstrings'], equipment: ['dumbbells', 'support'], tags: ['balance_demand'] },
+  'dumbbell-cross-lunge': { pattern: 'lunge', primary: ['glutes-max', 'glutes-med'], secondary: ['quads', 'adductors'], equipment: ['dumbbells', 'support'], tags: ['balance_demand'] },
+  'dumbbell-sumo-squat': { pattern: 'squat', primary: ['quads', 'glutes-max', 'adductors'], secondary: [], equipment: ['dumbbells', 'bench'], tags: [] },
+  'dumbbell-upright-row': { pattern: 'upright-row', primary: ['side-delts', 'mid-back'], secondary: ['biceps'], equipment: ['dumbbells'], tags: ['shoulder_load'] },
+  'reverse-bench-dip': { pattern: 'elbow-extension', primary: ['triceps'], secondary: ['chest', 'front-delts'], equipment: ['bench'], tags: ['shoulder_load', 'wrist_load', 'breath_hold_risk'] },
+  'cable-woodchop': { pattern: 'rotation', primary: ['obliques', 'core-deep'], secondary: [], equipment: ['cable-machine'], tags: ['twist'] },
+  'dumbbell-side-bend': { pattern: 'lateral-flexion', primary: ['obliques', 'core-deep'], secondary: [], equipment: ['dumbbells'], tags: [] },
+  'farmer-carry': { pattern: 'carry', primary: ['core-deep', 'obliques'], secondary: ['mid-back'], equipment: ['dumbbells'], tags: ['breath_hold_risk'] },
+  'seated-knee-tuck': { pattern: 'leg-raise', primary: ['abs', 'core-deep'], secondary: ['hip-flexors'], equipment: ['bench'], tags: ['breath_hold_risk', 'intra_abdominal_pressure'] },
+  'captain-chair-knee-raise': { pattern: 'leg-raise', primary: ['abs', 'core-deep'], secondary: ['hip-flexors'], equipment: ['captain-chair'], tags: ['breath_hold_risk', 'intra_abdominal_pressure'] },
+  'machine-ab-crunch': { pattern: 'trunk-flexion', primary: ['abs'], secondary: ['obliques', 'core-deep'], equipment: ['ab-crunch-machine'], tags: ['breath_hold_risk', 'intra_abdominal_pressure'] },
 };

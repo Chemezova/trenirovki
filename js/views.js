@@ -554,6 +554,9 @@ export function renderSettings() {
       <label class="field">Старт цикла (понедельник недели 1)<input type="date" data-f="startDate" value="${esc(s.startDate)}"></label>
       <label class="field">Цель, минус кг<input type="text" inputmode="decimal" data-f="goalLossKg" value="${esc(dec(s.goalLossKg))}"></label>
       <label class="field">Как к тебе обращаться<input type="text" data-f="name" value="${esc(s.name || '')}" placeholder="Елена"></label></section>
+    <section class="card"><h2>Мой зал</h2>
+      <p>Если чем-то пользоваться неудобно, в «Занято? Аналоги» и в каталоге будут только варианты без этого.</p>
+      <div class="chips">${chip('Коврик: неудобно', 'equip-toggle', 'mat', (s.noEquipment || []).includes('mat'))}</div></section>
     <section class="card"><h2>Звук и голос</h2>
       <div class="chips">${chip('Голос включён', 'voice', 'on', s.voice)}${chip('Без голоса', 'voice', 'off', !s.voice)}</div>
       ${btn('Проверить звук и голос', 'test-sound')}
@@ -920,7 +923,7 @@ function catSetCard() {
   const { week } = currentPhase();
   const sets = Math.max(2, cy.setsFor(week, ph));
   const restSec = cy.PHASES[ph].rest;
-  const a = CP.setAnalysis(ids, { available: availableExerciseIds(ph), conditionIds: catConds(), sets, restSec });
+  const a = CP.setAnalysis(ids, { available: CAT.withoutEquipment(availableExerciseIds(ph), S.settings.noEquipment || []), conditionIds: catConds(), sets, restSec });
   const items = ids.map((id, i) => {
     const pair = i > 0 ? a.pairs[i - 1] : null;
     const note = pair && pair.note;
@@ -993,7 +996,8 @@ export function renderCatalogExercise(id) {
   if (!m || !e) return '';
   const conds = catConds();
   const ph = catPhase();
-  const avail = availableExerciseIds(ph);
+  const noEq = S.settings.noEquipment || [];
+  const avail = CAT.withoutEquipment(availableExerciseIds(ph), noEq);
   const v = CAT.verdict(id, conds);
   const analogs = CAT.analogMachines(id, { available: avail, conditionIds: conds, limit: 4 });
   const pairs = CP.pairsFor(id, { available: avail, conditionIds: conds, limit: 4, baseRest: cy.PHASES[ph].rest });
@@ -1001,6 +1005,7 @@ export function renderCatalogExercise(id) {
   const row = (x, sub) => `<button class="day-item ex-row" data-a="cat-open" data-v="${x}"><div class="di-body"><div class="di-title">${esc(exName(x))}</div><div class="di-meta">${esc(sub)}</div></div></button>`;
   return `<div class="sheet-head"><h2>${esc(e.name)}</h2><button class="icon-btn" data-a="close" aria-label="Закрыть">${icon('x')}</button></div>
     <p class="sub">${esc(m.equipment.map(CAT.equipmentName).join(' + '))}</p>
+    ${CAT.needsEquipment(id, noEq) ? '<p class="note">Для этого упражнения нужен коврик. Ниже варианты без него.</p>' : ''}
     <p><b>Работают:</b> ${esc(CAT.muscleNames(m.primary).join(', ').toLowerCase())}${m.secondary.length ? `. <b>Помогают:</b> ${esc(CAT.muscleNames(m.secondary).join(', ').toLowerCase())}` : ''}.</p>
     ${v.level !== 'ok' ? `<p class="issue issue-important"><b>${v.level === 'avoid' ? 'Нельзя при твоих ограничениях' : 'Осторожно'}:</b> ${esc(v.reasons.map((r) => r.why).join('; '))}.</p>` : ''}
     ${e.eyeNote ? `<p class="eye-note">${esc(e.eyeNote)}</p>` : ''}
