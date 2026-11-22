@@ -15,6 +15,7 @@ import { pairNote, pairsFor, suggestFor, setAnalysis, historyBalance, workoutFro
 import { EXERCISE_META, MUSCLES, EQUIPMENT, RISK_TAGS, CONDITIONS } from './js/catalog-data.js';
 import { parseHealth, stepsToKm, kmToSteps, walkSteps, sessionPoolMin, swimMinutesOn, clubVisitDates, visitCounts, walkTotals, stepsByDay, stepsByWeek, healthInfo, hoursShortText, backupStatus } from './js/stats.js';
 import { bodyRecords, bodyChange, bodyDue, fatToTarget, fatZone, checkBodyRecord, devicesUsed, byDevice, HISTORY_SEED } from './js/body.js';
+import { FOCUS_AREAS, activeFocus, toggleFocus, setFocusSide, focusPlan, planSeconds, planMinutes, focusLabel } from './js/corrective.js';
 import { S } from './js/state.js';
 import { historyInUnit } from './js/progression.js';
 
@@ -460,6 +461,23 @@ eq('состав тела: проверка записи', [checkBodyRecord(HIST
 eq('состав тела: бланки внесены без ошибок', HISTORY_SEED.map(checkBodyRecord), [null, null, null, null]);
 eq('состав тела: у записей анализа нет полей веса и талии, которые читают «Вес» и «Талия»', HISTORY_SEED.filter((r) => ['weightKg', 'waistCm', 'bellyNavelCm', 'hipsCm', 'chestCm', 'thighCm', 'checkpoint'].some((k) => k in r)).length, 0);
 eq('состав тела: все записи помечены kind body', HISTORY_SEED.every((r) => r.kind === 'body'), true);
+
+
+// зоны внимания (блок для лопатки)
+const fs = (side) => ({ focus: [{ id: 'scapula', side }] });
+const names = (p) => p.map((x) => x.name);
+eq('зоны внимания: ничего не включено — блока нет', [focusPlan({}).length, focusPlan({ focus: [] }).length, focusPlan(undefined).length], [0, 0, 0]);
+eq('зоны внимания: неизвестная зона и повтор отбрасываются, плохая сторона становится «обе»', activeFocus({ focus: [{ id: 'x' }, { id: 'scapula', side: 'q' }, { id: 'scapula', side: 'left' }, null] }), [{ id: 'scapula', side: 'both' }]);
+eq('зоны внимания: левая сторона — левая первой и дольше, правая вдвое короче', (() => { const p = focusPlan(fs('left')).filter((x) => x.id === 'wall-slide'); return p.map((x) => [x.side, x.sec]); })(), [['left', 30], ['right', 15]]);
+eq('зоны внимания: правая сторона — правая первой', focusPlan(fs('right')).filter((x) => x.id === 'wall-slide').map((x) => [x.side, x.sec]), [['right', 30], ['left', 15]]);
+eq('зоны внимания: «обе» — поровну, левая первой', focusPlan(fs('both')).filter((x) => x.id === 'wall-slide').map((x) => [x.side, x.sec]), [['left', 30], ['right', 30]]);
+eq('зоны внимания: упражнения без стороны идут один раз, порядок сохраняется', names(focusPlan(fs('left'))), ['Лопатки вниз и назад', 'Ангелы у стены', 'Скольжение предплечья по стене (левая)', 'Скольжение предплечья по стене (правая)', 'Тяга резинки к поясу', 'Выталкивание от стены']);
+eq('зоны внимания: время блока 3–6 минут при любой стороне', ['left', 'right', 'both'].map((s) => planMinutes(focusPlan(fs(s))) >= 3 && planMinutes(focusPlan(fs(s))) <= 6), [true, true, true]);
+eq('зоны внимания: время считается суммой шагов', planSeconds(focusPlan(fs('left'))), 40 + 45 + 30 + 15 + 40 + 30);
+eq('зоны внимания: включить, сменить сторону, выключить', (() => { let l = toggleFocus([], 'scapula'); const a = JSON.stringify(l); l = setFocusSide(l, 'scapula', 'left'); const b = JSON.stringify(l); l = setFocusSide(l, 'scapula', 'bad'); const c = JSON.stringify(l); l = toggleFocus(l, 'scapula'); return [a, b, c === b, l]; })(), ['[{"id":"scapula","side":"both"}]', '[{"id":"scapula","side":"left"}]', true, []]);
+eq('зоны внимания: подпись зоны', [focusLabel(fs('left')), focusLabel(fs('both'))], [['Лопатка (левая)'], ['Лопатка']]);
+eq('зоны внимания: у каждого упражнения есть описание и время, в тексте нет «запрокин» как рекомендации движения', Object.values(FOCUS_AREAS).every((a) => a.items.every((x) => x.name && x.hint.length > 20 && x.sec >= 20)), true);
+eq('зоны внимания: комплекс помечен черновиком (без специалиста)', FOCUS_AREAS.scapula.review, 'draft');
 
 out.innerHTML = `<b>${fail ? `<span class="fail">Провалено: ${fail}</span>` : '<span class="ok">Все тесты прошли</span>'} · пройдено ${pass}</b>\n\n` + out.innerHTML;
 document.title = fail ? `FAIL ${fail}` : `OK ${pass}`;

@@ -17,6 +17,7 @@ import { PROGRAMS, programName, isStrength, programExercises, aquaPlan, availabl
 import * as CAT from './catalog.js';
 import * as CP from './catalog-plan.js';
 import * as BODY from './body.js';
+import * as FOC from './corrective.js';
 
 // ---------- утилиты ----------
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -107,6 +108,8 @@ const loadTypeFor = (ex) => exSet(ex).loadTypeOverride || ex.loadType;
 const modeFor = (ex) => (ex.progression === 'repsOnly' && loadTypeFor(ex) === 'dumbbell' ? 'double' : ex.progression);
 const hasFinish = (r) => r.gymKind !== 'gym';
 // Первый шаг после «Как ты сегодня?»: в зале — суставная разминка, только бассейн — сразу плавание
+// после суставной разминки: блок зоны внимания (если включён в настройках), иначе обычная разминка
+const afterJoints = (r) => (FOC.focusPlan(S.settings).length ? 'corrective' : 'warmup');
 const firstStage = (r) => (r.slot === 'pool' ? 'pool' : 'joints');
 const programIsLight = (r) => !!(PROGRAMS[r.slot] && PROGRAMS[r.slot].light);
 const afterMain = (r) => (hasFinish(r) ? 'pool' : 'stretch');
@@ -300,7 +303,7 @@ function renderWorkout() {
     ${r.stage !== 'summary' ? '<button class="btn btn-small btn-primary" data-a="end-early">Завершить</button>' : ''}
     <button class="stop-btn" data-a="stop" aria-label="Стоп-сигналы">!</button></div>`;
   const body = {
-    wellbeing: renderWellbeing, joints: renderJoints, warmup: renderWarmup, exercises: renderExercises, cardio: renderCardio,
+    wellbeing: renderWellbeing, joints: renderJoints, corrective: renderCorrective, warmup: renderWarmup, exercises: renderExercises, cardio: renderCardio,
     pool: renderPool, finish: renderFinish, aqua: renderAqua, spa: renderSpa, stretch: renderStretch, summary: renderSummary,
   }[r.stage]();
   return head + `<main class="workout">${body}</main>`;
@@ -331,6 +334,24 @@ function renderJoints() {
   const item = JOINT_WARMUP[tState(t).idx] || JOINT_WARMUP[0];
   return `${head}${timerBlock('timer', t, { showTotal: true })}<p class="lead">${esc(item.hint)}</p>
     ${btn(t.pausedAt ? 'Продолжить' : 'Пауза', 'timer-pause')}${btn('Следующее', 'timer-next')}${btn('К разминке', 'joints-done', { cls: 'btn-primary' })}`;
+}
+
+// Блок зоны внимания (ЛФК), например для лопатки: шаги по таймеру, как суставная разминка
+function renderCorrective() {
+  const r = S.run;
+  const plan = FOC.focusPlan(S.settings);
+  const t = r.timer && r.timer.kind === 'corrective' ? r.timer : null;
+  const head = `<h2 style="margin-top:14px">${esc(FOC.focusLabel(S.settings).join(' · ') || 'Корректирующий блок')}</h2>`;
+  const notes = FOC.activeFocus(S.settings).map((f) => `<p class="note">${esc(FOC.FOCUS_AREAS[f.id].note)}</p>`).join('');
+  if (!t) {
+    return `${head}<p class="lead">${FOC.planMinutes(plan)} мин, медленно, без боли. Голос подскажет, когда менять упражнение.</p>
+      <ol class="list">${plan.map((x) => `<li><b>${esc(x.name)}</b> — ${esc(x.hint)}</li>`).join('')}</ol>${notes}
+      ${btn('Старт', 'corr-start', { cls: 'btn-primary btn-xl' })}${btn('Уже сделано', 'corr-done')}${btn('Пропустить', 'corr-skip', { cls: 'btn-link' })}`;
+  }
+  if (t.done) return `<h2 style="margin-top:14px">Блок окончен</h2>${btn('К разминке', 'corr-done', { cls: 'btn-primary btn-xl' })}`;
+  const item = plan[tState(t).idx] || plan[0];
+  return `${head}${timerBlock('timer', t, { showTotal: true })}<p class="lead">${esc(item.hint)}</p>${notes}
+    ${btn(t.pausedAt ? 'Продолжить' : 'Пауза', 'timer-pause')}${btn('Следующее', 'timer-next')}${btn('К разминке', 'corr-done', { cls: 'btn-primary' })}`;
 }
 
 function renderWarmup() {
@@ -1050,8 +1071,15 @@ const A = {
     startTimer('timer', 'joints', segments, { endSay: 'Суставная разминка окончена' });
     await saveRun(); render();
   },
-  'joints-done': async () => { S.run.timer = null; S.run.joints = 'done'; S.run.stage = 'warmup'; await saveRun(); window.scrollTo(0, 0); render(); },
-  'joints-skip': async () => { S.run.timer = null; S.run.joints = 'skipped'; S.run.stage = 'warmup'; await saveRun(); window.scrollTo(0, 0); render(); },
+  'joints-done': async () => { S.run.timer = null; S.run.joints = 'done'; S.run.stage = afterJoints(S.run); await saveRun(); window.scrollTo(0, 0); render(); },
+  'joints-skip': async () => { S.run.timer = null; S.run.joints = 'skipped'; S.run.stage = afterJoints(S.run); await saveRun(); window.scrollTo(0, 0); render(); },
+  'corr-start': async () => {
+    const segments = FOC.focusPlan(S.settings).map((x) => ({ label: x.name, sec: x.sec, say: x.name, beep: 'short' }));
+    startTimer('timer', 'corrective', segments, { endSay: 'Блок окончен' });
+    await saveRun(); render();
+  },
+  'corr-done': async () => { S.run.timer = null; S.run.corrective = 'done'; S.run.stage = 'warmup'; await saveRun(); window.scrollTo(0, 0); render(); },
+  'corr-skip': async () => { S.run.timer = null; S.run.corrective = 'skipped'; S.run.stage = 'warmup'; await saveRun(); window.scrollTo(0, 0); render(); },
   'warmup-start': async () => { startTimer('timer', 'warmup', [{ label: 'Разминка', sec: (S.run.slot === 'cardio' ? 5 : 10) * 60, half: true }], { endSay: 'Разминка окончена' }); await saveRun(); render(); },
   'warmup-done': async () => { S.run.timer = null; S.run.stage = S.run.slot === 'cardio' ? 'cardio' : 'exercises'; await saveRun(); render(); },
   'timer-pause': async () => { const t = S.run.timer; if (!t) return; if (t.pausedAt) { t.pausedMs += Date.now() - t.pausedAt; t.pausedAt = null; } else t.pausedAt = Date.now(); await saveRun(); render(); },
@@ -1310,6 +1338,8 @@ const A = {
     S.settings.noEquipment = l.includes(v) ? l.filter((x) => x !== v) : [...l, v];
     await saveSettings(); render();
   },
+  'focus-toggle': async (v) => { S.settings.focus = FOC.toggleFocus(S.settings.focus, v); await saveSettings(); render(); },
+  'focus-side': async (v) => { const [id, side] = splitV(v); S.settings.focus = FOC.setFocusSide(S.settings.focus, id, side); await saveSettings(); render(); },
   voice: async (v) => { S.settings.voice = v === 'on'; snd.setVoice(S.settings.voice); await saveSettings(); render(); },
   'test-sound': () => { snd.unlock(); snd.announce('Проверка. Отдых окончен. Подход 2 из 3', 'end'); },
   export: () => doExport(),

@@ -9,6 +9,7 @@ import { FOLDERS, PROGRAMS, programName, programExercises, upcomingSwaps, aquaPl
 import * as CAT from './catalog.js';
 import * as CP from './catalog-plan.js';
 import * as BODY from './body.js';
+import * as FOC from './corrective.js';
 import { EXERCISE_META, MUSCLES, MUSCLE_GROUPS } from './catalog-data.js';
 import { hasRuVoice } from './sound.js';
 
@@ -598,6 +599,15 @@ export function renderSettings() {
     <section class="card"><h2>Мой зал</h2>
       <p>Если чем-то пользоваться неудобно, в «Занято? Аналоги» и в каталоге будут только варианты без этого.</p>
       <div class="chips">${chip('Коврик: неудобно', 'equip-toggle', 'mat', (s.noEquipment || []).includes('mat'))}</div></section>
+    <section class="card"><h2>Зоны внимания</h2>
+      <p>Короткий блок упражнений (ЛФК) после суставной разминки. Включённая зона появится в каждой тренировке в зале; её можно пропустить на месте.</p>
+      ${Object.entries(FOC.FOCUS_AREAS).map(([id, a]) => {
+        const f = FOC.activeFocus(s).find((x) => x.id === id);
+        return `<div class="chips">${chip(esc(a.name), 'focus-toggle', id, !!f)}</div>
+          ${f && a.sided ? `<fieldset><legend>Какая сторона</legend><div class="chips">${Object.entries(FOC.FOCUS_SIDES).map(([sd, l]) => chip(l, 'focus-side', `${id}|${sd}`, f.side === sd)).join('')}</div></fieldset>
+          <p class="note">Выбранная сторона делается дольше, вторая вдвое короче; «Обе» — поровну.</p>` : ''}
+          ${f && a.review === 'draft' ? '<p class="note">Комплекс общий, составлен без специалиста: если есть диагноз, покажи его врачу или инструктору ЛФК.</p>' : ''}`;
+      }).join('')}</section>
     <section class="card"><h2>Звук и голос</h2>
       <div class="chips">${chip('Голос включён', 'voice', 'on', s.voice)}${chip('Без голоса', 'voice', 'off', !s.voice)}</div>
       ${btn('Проверить звук и голос', 'test-sound')}
@@ -731,6 +741,7 @@ export function renderProgram(id) {
   let n = 1;
   const steps = p.kind === 'pool' ? [step(n++, 'Плавание', esc(pool.text))] : [
     step(n++, `Суставная разминка · ${Math.round(JOINT_WARMUP_SEC / 60)} мин`, esc(JOINT_WARMUP.map((x) => x.name.toLowerCase()).join(', '))),
+    ...(FOC.focusPlan(S.settings).length ? [step(n++, `${FOC.focusLabel(S.settings).join(' · ')} · ${FOC.planMinutes(FOC.focusPlan(S.settings))} мин`, esc(FOC.focusPlan(S.settings).map((x) => x.name.toLowerCase()).join(', ')))] : []),
     step(n++, 'Разминка', `${id === 'cardio' ? 5 : 10} мин эллипс или велотренажёр, спокойно`),
   ];
   if (p.kind === 'cardio') steps.push(step(n++, `Кардио ${ph.cardioMin} мин`, 'Зона 2: можно говорить короткими фразами. Эллипс, велотренажёр или дорожка с наклоном 5–8%.'));
