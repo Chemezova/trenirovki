@@ -8,14 +8,15 @@
 <script type="module">
 import * as cy from './js/cycle.js';
 import { suggest } from './js/progression.js';
-import { programName, isStrength, programExercises, upcomingSwaps, aquaPlan, availableExerciseIds } from './js/programs.js';
+import { programName, isStrength, programExercises, programExercisesWithFocus, upcomingSwaps, aquaPlan, availableExerciseIds } from './js/programs.js';
 import { EXERCISES, EX_BY_ID } from './js/data.js';
 import { needsEquipment, withoutEquipment, activeConditions, verdict, alternatives, analogMachines } from './js/catalog.js';
 import { pairNote, pairsFor, suggestFor, setAnalysis, historyBalance, workoutFromSet, supersetStep, canSuperset, pairRestSec, roleOf, regionOf, isBack, isPress, PAIR_REST } from './js/catalog-plan.js';
 import { EXERCISE_META, MUSCLES, EQUIPMENT, RISK_TAGS, CONDITIONS } from './js/catalog-data.js';
 import { parseHealth, stepsToKm, kmToSteps, walkSteps, sessionPoolMin, swimMinutesOn, clubVisitDates, visitCounts, walkTotals, stepsByDay, stepsByWeek, healthInfo, hoursShortText, backupStatus } from './js/stats.js';
 import { bodyRecords, bodyChange, bodyDue, fatToTarget, fatZone, checkBodyRecord, devicesUsed, byDevice, HISTORY_SEED } from './js/body.js';
-import { FOCUS_AREAS, activeFocus, toggleFocus, setFocusSide, focusPlan, planSeconds, planMinutes, focusLabel } from './js/corrective.js';
+import { FOCUS_AREAS, CORRECTIVE_EXERCISES, activeFocus, toggleFocus, setFocusSide, setFocusMode, focusPlan, inlineExerciseIds, planSeconds, planMinutes, focusLabel, sideNote } from './js/corrective.js';
+import { ageOn, fatRange, checkProfile, latestGirths, waistHipRatio } from './js/profile.js';
 import { S } from './js/state.js';
 import { historyInUnit } from './js/progression.js';
 
@@ -463,21 +464,42 @@ eq('состав тела: у записей анализа нет полей в
 eq('состав тела: все записи помечены kind body', HISTORY_SEED.every((r) => r.kind === 'body'), true);
 
 
-// зоны внимания (блок для лопатки)
-const fs = (side) => ({ focus: [{ id: 'scapula', side }] });
+// зоны внимания (лопатка) и профиль
+const fs = (side, mode = 'block') => ({ focus: [{ id: 'scapula', side, mode }] });
 const names = (p) => p.map((x) => x.name);
-eq('зоны внимания: ничего не включено — блока нет', [focusPlan({}).length, focusPlan({ focus: [] }).length, focusPlan(undefined).length], [0, 0, 0]);
-eq('зоны внимания: неизвестная зона и повтор отбрасываются, плохая сторона становится «обе»', activeFocus({ focus: [{ id: 'x' }, { id: 'scapula', side: 'q' }, { id: 'scapula', side: 'left' }, null] }), [{ id: 'scapula', side: 'both' }]);
-eq('зоны внимания: левая сторона — левая первой и дольше, правая вдвое короче', (() => { const p = focusPlan(fs('left')).filter((x) => x.id === 'wall-slide'); return p.map((x) => [x.side, x.sec]); })(), [['left', 30], ['right', 15]]);
+eq('зоны внимания: ничего не включено — блока и упражнений нет', [focusPlan({}).length, focusPlan({ focus: [] }).length, focusPlan(undefined).length, inlineExerciseIds({}).length], [0, 0, 0, 0]);
+eq('зоны внимания: неизвестная зона и повтор отбрасываются, сторона и режим по умолчанию', activeFocus({ focus: [{ id: 'x' }, { id: 'scapula', side: 'q', mode: 'z' }, { id: 'scapula', side: 'left' }, null] }), [{ id: 'scapula', side: 'both', mode: 'inline' }]);
+eq('зоны внимания: режим «в тренировках» не даёт таймерного блока, режим «блок» не даёт упражнений', [focusPlan(fs('left', 'inline')).length, inlineExerciseIds(fs('left', 'block')).length], [0, 0]);
+eq('зоны внимания: левая сторона — левая первой и дольше, правая вдвое короче', focusPlan(fs('left')).filter((x) => x.id === 'wall-slide').map((x) => [x.side, x.sec]), [['left', 30], ['right', 15]]);
 eq('зоны внимания: правая сторона — правая первой', focusPlan(fs('right')).filter((x) => x.id === 'wall-slide').map((x) => [x.side, x.sec]), [['right', 30], ['left', 15]]);
 eq('зоны внимания: «обе» — поровну, левая первой', focusPlan(fs('both')).filter((x) => x.id === 'wall-slide').map((x) => [x.side, x.sec]), [['left', 30], ['right', 30]]);
-eq('зоны внимания: упражнения без стороны идут один раз, порядок сохраняется', names(focusPlan(fs('left'))), ['Лопатки вниз и назад', 'Ангелы у стены', 'Скольжение предплечья по стене (левая)', 'Скольжение предплечья по стене (правая)', 'Тяга резинки к поясу', 'Выталкивание от стены']);
-eq('зоны внимания: время блока 3–6 минут при любой стороне', ['left', 'right', 'both'].map((s) => planMinutes(focusPlan(fs(s))) >= 3 && planMinutes(focusPlan(fs(s))) <= 6), [true, true, true]);
+eq('зоны внимания: порядок блока и упражнения без стороны один раз', names(focusPlan(fs('left'))), ['Лопатки вниз и назад', 'Ангелы у стены', 'Скольжение предплечья по стене (левая)', 'Скольжение предплечья по стене (правая)', 'Тяга лёгкой резинки к поясу', 'Выталкивание от стены']);
+eq('зоны внимания: время блока 3–6 минут при любой стороне', ['left', 'right', 'both'].map((x) => planMinutes(focusPlan(fs(x))) >= 3 && planMinutes(focusPlan(fs(x))) <= 6), [true, true, true]);
 eq('зоны внимания: время считается суммой шагов', planSeconds(focusPlan(fs('left'))), 40 + 45 + 30 + 15 + 40 + 30);
-eq('зоны внимания: включить, сменить сторону, выключить', (() => { let l = toggleFocus([], 'scapula'); const a = JSON.stringify(l); l = setFocusSide(l, 'scapula', 'left'); const b = JSON.stringify(l); l = setFocusSide(l, 'scapula', 'bad'); const c = JSON.stringify(l); l = toggleFocus(l, 'scapula'); return [a, b, c === b, l]; })(), ['[{"id":"scapula","side":"both"}]', '[{"id":"scapula","side":"left"}]', true, []]);
+eq('зоны внимания: включить, сменить сторону и режим, выключить', (() => { let l = toggleFocus([], 'scapula'); const a = JSON.stringify(l); l = setFocusSide(l, 'scapula', 'left'); l = setFocusMode(l, 'scapula', 'block'); const b = JSON.stringify(l); l = setFocusSide(setFocusMode(l, 'scapula', 'bad'), 'scapula', 'bad'); const c = JSON.stringify(l); l = toggleFocus(l, 'scapula'); return [a, b, c === b, l, toggleFocus([], 'нет')]; })(), ['[{"id":"scapula","side":"both","mode":"inline"}]', '[{"id":"scapula","side":"left","mode":"block"}]', true, [], []]);
 eq('зоны внимания: подпись зоны', [focusLabel(fs('left')), focusLabel(fs('both'))], [['Лопатка (левая)'], ['Лопатка']]);
-eq('зоны внимания: у каждого упражнения есть описание и время, в тексте нет «запрокин» как рекомендации движения', Object.values(FOCUS_AREAS).every((a) => a.items.every((x) => x.name && x.hint.length > 20 && x.sec >= 20)), true);
 eq('зоны внимания: комплекс помечен черновиком (без специалиста)', FOCUS_AREAS.scapula.review, 'draft');
+eq('зоны внимания: упражнения есть в приложении, каталоге и без оборудования-вне-списка', CORRECTIVE_EXERCISES.filter((e) => !EX_BY_ID[e.id] || !EXERCISE_META[e.id] || !EXERCISE_META[e.id].corrective || e.sets !== 2 || e.restSec !== 30 || e.loadType !== 'bodyweight').map((e) => e.id), []);
+eq('зоны внимания: у упражнений есть описание, мышцы и повторы', CORRECTIVE_EXERCISES.filter((e) => !e.setup || !e.movement || !e.mistakes || !e.muscles || !e.reps).map((e) => e.id), []);
+eq('зоны внимания: упражнения не попадают в замены и общий список силовых', availableExerciseIds('p3').filter((id) => EX_BY_ID[id].corrective), []);
+const A3 = programExercises('A', 'p3').map((e) => e.id);
+eq('комплекс: без зоны программа не меняется', programExercisesWithFocus('A', 'p3', {}).map((e) => e.id), A3);
+eq('комплекс: упражнения лопатки идут первыми в силовой А и Б', [programExercisesWithFocus('A', 'p3', fs('left', 'inline')).map((e) => e.id).slice(0, 5), programExercisesWithFocus('B', 'p3', fs('left', 'inline')).length - programExercises('B', 'p3').length], [['scap-down-back', 'wall-angels', 'wall-slide', 'scap-band-row', 'wall-push-plus'], 5]);
+eq('комплекс: основные упражнения идут следом без изменений', programExercisesWithFocus('A', 'p3', fs('left', 'inline')).slice(5).map((e) => e.id), A3);
+eq('комплекс: кардио и бассейн без упражнений зоны', [programExercisesWithFocus('cardio', 'p3', fs('left', 'inline')).length === programExercises('cardio', 'p3').length, programExercisesWithFocus('pool', 'p3', fs('left', 'inline')).length === programExercises('pool', 'p3').length], [true, true]);
+eq('комплекс: в режиме блока упражнения в список не добавляются', programExercisesWithFocus('A', 'p3', fs('left', 'block')).map((e) => e.id), A3);
+eq('зоны внимания: подсказка про сторону', [sideNote(fs('left', 'inline'), EX_BY_ID['wall-slide']), sideNote(fs('both', 'inline'), EX_BY_ID['wall-slide']), sideNote(fs('left', 'inline'), EX_BY_ID['wall-angels']), sideNote({}, EX_BY_ID['wall-slide'])], ['Начни с левой стороны и сделай её полностью, вторую можно короче.', 'Начни с левой стороны.', '', '']);
+const mk = (date, ids) => ({ date, sets: ids.flatMap((exerciseId) => [0, 1].map(() => ({ exerciseId, isWarmup: false }))) });
+eq('баланс: корректирующие упражнения в подсчёт не входят', historyBalance([mk('2026-11-18', ['wall-angels', 'wall-slide', 'scap-down-back'])], '2026-11-18').total, 0);
+eq('баланс: основные подходы считаются как раньше рядом с корректирующими', historyBalance([mk('2026-11-18', ['wall-angels', 'leg-extension'])], '2026-11-18').total, 2);
+eq('профиль: возраст на дату', [ageOn('1979-08-30', '2026-11-22'), ageOn('1979-11-22', '2026-11-22'), ageOn('1979-11-23', '2026-11-22'), ageOn('', '2026-11-22'), ageOn('1979-8-30', '2026-11-22')], [47, 47, 46, null, null]);
+eq('профиль: ориентир жира женщины по возрасту', [fatRange('female', 47), fatRange('female', 25).range, fatRange('female', 33).range, fatRange('female', 65).range, fatRange('female', 52).ageBand], [{ range: [23, 33], source: 'age', ageBand: '40–49' }, [21, 31], [22, 32], [25, 35], '50–59']);
+eq('профиль: без возраста — ориентир прибора, у мужчин нормы нет', [fatRange('female', null), fatRange('male', 40), fatRange('female', 19).source], [{ range: [18, 28], source: 'device' }, null, 'device']);
+eq('состав тела: зона жира с возрастом 47 — 33,7 % чуть выше, 33 % в пределах', [fatZone(33.7, 'female', 47), fatZone(33, 'female', 47), fatZone(33.7, 'female', null)], ['above', 'in', 'above']);
+eq('профиль: проверка данных', [checkProfile({ heightCm: 162, birthDate: '1979-08-30', sex: 'female' }, '2026-11-22'), checkProfile({ heightCm: 20 }, '2026-11-22'), checkProfile({ birthDate: '2030-01-01' }, '2026-11-22'), checkProfile({ birthDate: '2020-01-01' }, '2026-11-22'), checkProfile({ sex: 'x' }, '2026-11-22'), checkProfile({}, '2026-11-22')], [null, 'Рост должен быть от 100 до 230 см', 'Дата рождения указана неверно', 'Приложение рассчитано на взрослых', 'Выбери пол', null]);
+const GM = [{ date: '2026-11-08', waistCm: 75, hipsCm: 103 }, { date: '2026-11-15', waistCm: 73.5, bellyNavelCm: 83.5, hipsCm: 102, thighCm: 58, chestCm: 96, at: 'a' }, { kind: 'body', date: '2026-11-21', waistCm: 99 }, { date: '2026-11-21', weightKg: 68 }];
+eq('профиль: последние мерки берутся по свежей дате, записи анализа и веса не мешают', latestGirths(GM).map((g) => [g.key, g.value, g.date]), [['waistCm', 73.5, '2026-11-15'], ['bellyNavelCm', 83.5, '2026-11-15'], ['hipsCm', 102, '2026-11-15'], ['thighCm', 58, '2026-11-15'], ['chestCm', 96, '2026-11-15']]);
+eq('профиль: талия/бёдра по рулетке 73,5/102 = 0,72, без мерок — null', [waistHipRatio(latestGirths(GM)), waistHipRatio([])], [0.72, null]);
 
 out.innerHTML = `<b>${fail ? `<span class="fail">Провалено: ${fail}</span>` : '<span class="ok">Все тесты прошли</span>'} · пройдено ${pass}</b>\n\n` + out.innerHTML;
 document.title = fail ? `FAIL ${fail}` : `OK ${pass}`;

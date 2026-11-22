@@ -1,6 +1,7 @@
 // Программы тренировок: установочные, комплексы-миксы и папки блогеров (из «Моих видео»)
 import { EXERCISES, EX_BY_ID } from './data.js';
 import { UNIVERSAL } from './exercises-extra.js';
+import { CORRECTIVE_EXERCISES, inlineExerciseIds } from './corrective.js';
 
 // Дополнительные упражнения для миксов — все проверены по ограничениям: без задержки дыхания,
 // без прыжков, голова не ниже сердца, без тяжёлых базовых
@@ -207,7 +208,7 @@ export function aquaPlan(phase) {
   return { ...p, minutes, segments, text: `${p.rounds} × ${AQUA.length} упражнений по ${p.sec} с, ~${minutes} мин` };
 }
 
-for (const e of [...EXTRA, ...UNIVERSAL, ...VARIATIONS, ...AQUA]) {
+for (const e of [...EXTRA, ...UNIVERSAL, ...VARIATIONS, ...AQUA, ...CORRECTIVE_EXERCISES]) {
   e.day = null;
   EXERCISES.push(e);
   EX_BY_ID[e.id] = e;
@@ -336,9 +337,18 @@ export function programExercises(id, phase) {
   return p.exercises.map((x) => EX_BY_ID[swaps[x] || x]).filter((e) => e && phaseIdx(phase) >= phaseIdx(e.fromPhase));
 }
 
+// Упражнения программы вместе с упражнениями зон внимания (режим «в тренировках»): они идут первыми, после разминки.
+// Добавляются только в силовые тренировки в зале.
+export function programExercisesWithFocus(id, phase, settings) {
+  const base = programExercises(id, phase);
+  if (!PROGRAMS[id] || PROGRAMS[id].kind !== 'gym') return base;
+  const have = new Set(base.map((e) => e.id));
+  return [...inlineExerciseIds(settings).filter((x) => !have.has(x)).map((x) => EX_BY_ID[x]), ...base];
+}
+
 // Силовые упражнения, доступные в этой фазе (без аквааэробики) — из них подбираются замены
 export function availableExerciseIds(phase) {
-  return EXERCISES.filter((e) => !AQUA_IDS.includes(e.id) && phaseIdx(phase) >= phaseIdx(e.fromPhase)).map((e) => e.id);
+  return EXERCISES.filter((e) => !AQUA_IDS.includes(e.id) && !e.corrective && phaseIdx(phase) >= phaseIdx(e.fromPhase)).map((e) => e.id);
 }
 
 // Какие замены ждут программу позже, чем текущая фаза

@@ -5,12 +5,13 @@ import * as P from './plan.js';
 import * as ST from './stats.js';
 import { esc, dec, btn, chip, icon, stars, heroArt, quoteOf, barChart, lineChart } from './ui.js';
 import { HOME_KINDS, SWAPS, TABLE_PROMPT, EX_BY_ID, STRETCHES, poolPlan, SPA_RULES, JOINT_WARMUP, JOINT_WARMUP_SEC, MOTIVATION, MOTIVATION_PROOFS_TITLE, MOTIVATION_NO_PROOFS, MOTIVATION_PM_NOTE } from './data.js';
-import { FOLDERS, PROGRAMS, programName, programExercises, upcomingSwaps, aquaPlan, availableExerciseIds } from './programs.js';
+import { FOLDERS, PROGRAMS, programName, programExercises, programExercisesWithFocus, upcomingSwaps, aquaPlan, availableExerciseIds } from './programs.js';
 import * as CAT from './catalog.js';
 import * as CP from './catalog-plan.js';
 import * as BODY from './body.js';
 import * as FOC from './corrective.js';
-import { EXERCISE_META, MUSCLES, MUSCLE_GROUPS } from './catalog-data.js';
+import * as PROF from './profile.js';
+import { EXERCISE_META, MUSCLES, MUSCLE_GROUPS, CONDITIONS } from './catalog-data.js';
 import { hasRuVoice } from './sound.js';
 
 const MONTHS_GEN = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
@@ -523,6 +524,7 @@ export function renderGoals() {
   const CIRC = [['waistCm', 'талия'], ['chestCm', 'грудь'], ['bellyNavelCm', 'живот'], ['hipsCm', 'бёдра'], ['thighCm', 'бедро']];
   const measures = S.measurements.filter((m) => CIRC.some(([k]) => m[k] != null)).sort((a, b) => b.date.localeCompare(a.date));
   return `<header class="page-title"><h1>Цели и прогресс</h1><button class="icon-btn" data-a="go" data-v="settings" aria-label="Настройки">${icon('gear')}</button></header>
+    ${profileCard()}
     <section class="card"><h2>Мои цели к ${cy.fmtDate(end)}</h2>
       <ul class="list"><li>Минус ${S.settings.goalLossKg} кг жира${wl && wl.lost > 0 ? ` · уже −${dec(wl.lost)}` : ''}</li><li>Минус 2–4 см на талии</li><li>3 визита в клуб в неделю</li><li>Шаги: 7–8 тыс. → 9–10 тыс. в день</li></ul>
       ${goalRows()}</section>
@@ -537,6 +539,61 @@ export function renderGoals() {
     <section class="card"><h2>Талия, см</h2>${waistChart}</section>
     ${bodyBlock()}
     <section class="card"><h2>Замеры</h2>${measures.length ? measures.map((m) => `<div class="row-btn"><b>${cy.fmtShort(m.date)}${m.checkpoint != null ? ` · контрольный ${m.checkpoint}` : ''}${m.premenstrual ? ' · непоказательно' : ''}</b><span>${CIRC.filter(([k]) => m[k] != null).map(([k, l]) => `${l} ${dec(m[k])}`).join(' · ')}</span><button class="btn-link danger-link" data-a="del-measure" data-v="${m.id}">Удалить</button></div>`).join('') : '<p class="note">Пока пусто.</p>'}</section>`;
+}
+
+// ---------- общий профиль ----------
+const condNames = () => (S.settings.conditions || []).map((id) => (CONDITIONS[id] ? CONDITIONS[id].name : id));
+function profileCard() {
+  const s = S.settings;
+  const age = PROF.ageOn(s.birthDate, cy.today());
+  const base = [s.heightCm ? `${dec(s.heightCm)} см` : null, age != null ? `${age} ${age % 10 === 1 && age % 100 !== 11 ? 'год' : [2, 3, 4].includes(age % 10) && ![12, 13, 14].includes(age % 100) ? 'года' : 'лет'}` : null, PROF.SEX[s.profile] ? PROF.SEX[s.profile].toLowerCase() : null].filter(Boolean).join(' · ');
+  const w = ST.weights();
+  const lastW = w[w.length - 1];
+  const body = BODY.bodyRecords(S.measurements);
+  const lastB = body[body.length - 1];
+  const girths = PROF.latestGirths(S.measurements);
+  const gDate = girths.reduce((d, g) => (g.date > d ? g.date : d), '');
+  const ratio = PROF.waistHipRatio(girths);
+  const zones = FOC.focusLabel(s);
+  const row = (k, v) => `<div class="row-btn"><b>${k}</b><span>${v}</span></div>`;
+  return `<section class="card" id="g-profile"><h2>Профиль</h2>
+    ${row('Основное', esc(base || 'не заполнено'))}
+    ${row('Вес', lastW ? `${dec(lastW.weightKg)} кг · ${fmtFull(lastW.date)}` : 'нет записей')}
+    ${row('Состав тела', lastB ? `жир ${dec(lastB.fatKg)} кг${lastB.fatPct != null ? ` (${dec(lastB.fatPct)} %)` : ''}, мышцы ${dec(lastB.muscleKg)} кг · ${fmtFull(lastB.date)}` : 'нет анализов')}
+    ${row('Мерки', girths.length ? `${girths.map((g) => `${g.label.toLowerCase()} ${dec(g.value)}`).join(' · ')}${ratio != null ? ` · талия/бёдра ${dec(ratio, 2)}` : ''} · ${fmtFull(gDate)}` : 'нет замеров')}
+    ${row('Ограничения', esc(condNames().join(', ') || 'нет'))}
+    ${row('Зоны внимания', esc(zones.length ? zones.join(', ') : 'не выбраны'))}
+    ${btn('Изменить профиль', 'go', { v: 'profile' })}</section>`;
+}
+
+export function renderProfile(form) {
+  const s = S.settings;
+  const f = form;
+  const age = PROF.ageOn(f.birthDate, cy.today());
+  const field = (key, label, type = 'text', mode = 'decimal') => `<label class="field">${label}<input type="${type}" ${type === 'text' ? `inputmode="${mode}"` : ''} data-f="m-${key}" value="${esc(f[key] ?? '')}"></label>`;
+  const zones = FOC.activeFocus(s);
+  return `<header class="page-title"><button class="icon-btn" data-a="go" data-v="back" aria-label="Назад">${icon('back')}</button><h1>Профиль</h1></header>
+    <section class="card"><h2>Основное</h2>
+      ${field('heightCm', 'Рост, см')}
+      ${field('birthDate', 'Дата рождения', 'date')}${age != null ? `<p class="note">Возраст: ${age}</p>` : ''}
+      <fieldset><legend>Пол</legend><div class="chips">${Object.entries(PROF.SEX).map(([id, l]) => chip(l, 'p-sex', id, f.sex === id)).join('')}</div></fieldset>
+      <p class="note">От профиля считаются нормы: например, ориентир процента жира зависит от возраста. Для мужчин норма пока не заведена.</p>
+      ${f.error ? `<p class="eye-note">${esc(f.error)}</p>` : ''}
+      ${btn('Сохранить', 'profile-save', { cls: 'btn-primary btn-xl' })}</section>
+    <section class="card"><h2>Ограничения</h2>
+      <p>${esc(condNames().join(', ') || 'Нет')}</p>
+      <p class="note">Выбор ограничений (шея, колени, варикоз и др.) появится отдельным шагом. Сейчас действуют правила для глаз.</p></section>
+    <section class="card"><h2>Зоны внимания</h2>
+      <p>Корректирующие упражнения (ЛФК) для проблемной зоны. Включи зону и выбери, как их делать.</p>
+      ${Object.entries(FOC.FOCUS_AREAS).map(([id, a]) => {
+        const z = zones.find((x) => x.id === id);
+        return `<div class="chips">${chip(esc(a.name), 'focus-toggle', id, !!z)}</div>
+          ${z && a.sided ? `<fieldset><legend>Какая сторона</legend><div class="chips">${Object.entries(FOC.FOCUS_SIDES).map(([sd, l]) => chip(l, 'focus-side', `${id}|${sd}`, z.side === sd)).join('')}</div></fieldset>
+          <p class="note">Выбранная сторона делается первой и дольше, вторая вдвое короче; «Обе» — поровну.</p>` : ''}
+          ${z ? `<fieldset><legend>Как делать</legend><div class="chips">${Object.entries(FOC.FOCUS_MODES).map(([m, l]) => chip(l, 'focus-mode', `${id}|${m}`, z.mode === m)).join('')}</div></fieldset>
+          <p class="note">${z.mode === 'inline' ? 'Упражнения встают в начало каждой силовой тренировки после разминки: 2 подхода, отдых 30 с. Они видны в «Программах».' : 'После суставной разминки появится отдельный блок по таймеру с голосом. Его можно пропустить на месте.'}</p>` : ''}
+          ${z && a.review === 'draft' ? '<p class="note">Комплекс общий, составлен без специалиста: если есть диагноз, покажи его врачу или инструктору ЛФК.</p>' : ''}`;
+      }).join('')}</section>`;
 }
 
 // ---------- состав тела (InBody и подобные приборы) ----------
@@ -554,10 +611,15 @@ function bodyBlock() {
   if (last.visceral != null) parts.push(`висцеральный жир ${last.visceral}`);
   let zone = '';
   if (last.device === 'inbody' && last.fatPct != null) {
-    const z = BODY.fatZone(last.fatPct, S.settings.profile);
-    const [lo, hi] = BODY.FAT_PCT_NORM[S.settings.profile] || BODY.FAT_PCT_NORM.female;
-    const need = z === 'above' ? BODY.fatToTarget(last, hi) : null;
-    zone = `<p>${z === 'above' ? `Процент жира выше ориентира ${lo}–${hi} %.` : z === 'in' ? `Процент жира в ориентире ${lo}–${hi} %.` : `Процент жира ниже ориентира ${lo}–${hi} %.`}${need ? ` До верхней границы около ${dec(need)} кг жира при сохранённых мышцах.` : ''}</p>`;
+    const age = PROF.ageOn(S.settings.birthDate, cy.today());
+    const fr = PROF.fatRange(S.settings.profile, age);
+    if (fr) {
+      const z = BODY.fatZone(last.fatPct, S.settings.profile, age);
+      const [lo, hi] = fr.range;
+      const label = fr.source === 'age' ? `ориентира для ${fr.ageBand} лет (${lo}–${hi} %)` : `ориентира ${lo}–${hi} %`;
+      const need = z === 'above' ? BODY.fatToTarget(last, hi) : null;
+      zone = `<p>${z === 'above' ? `Процент жира выше ${label}.` : z === 'in' ? `Процент жира в пределах ${label}.` : `Процент жира ниже ${label}.`}${need ? ` До верхней границы около ${dec(need)} кг жира при сохранённых мышцах.` : ''}</p>${fr.source === 'device' ? '<p class="note">Укажи дату рождения в профиле, и ориентир будет учитывать возраст.</p>' : ''}`;
+    }
   }
   const change = ch
     ? `<p>С ${fmtFull(ch.from)} (тот же прибор): жир ${ch.fatKg == null ? '—' : sgn(ch.fatKg) + ' кг'}, мышцы ${ch.muscleKg == null ? '—' : sgn(ch.muscleKg) + ' кг'}. Смотри на кг, а не на проценты: проценты прыгают от воды.</p>`
@@ -599,15 +661,6 @@ export function renderSettings() {
     <section class="card"><h2>Мой зал</h2>
       <p>Если чем-то пользоваться неудобно, в «Занято? Аналоги» и в каталоге будут только варианты без этого.</p>
       <div class="chips">${chip('Коврик: неудобно', 'equip-toggle', 'mat', (s.noEquipment || []).includes('mat'))}</div></section>
-    <section class="card"><h2>Зоны внимания</h2>
-      <p>Короткий блок упражнений (ЛФК) после суставной разминки. Включённая зона появится в каждой тренировке в зале; её можно пропустить на месте.</p>
-      ${Object.entries(FOC.FOCUS_AREAS).map(([id, a]) => {
-        const f = FOC.activeFocus(s).find((x) => x.id === id);
-        return `<div class="chips">${chip(esc(a.name), 'focus-toggle', id, !!f)}</div>
-          ${f && a.sided ? `<fieldset><legend>Какая сторона</legend><div class="chips">${Object.entries(FOC.FOCUS_SIDES).map(([sd, l]) => chip(l, 'focus-side', `${id}|${sd}`, f.side === sd)).join('')}</div></fieldset>
-          <p class="note">Выбранная сторона делается дольше, вторая вдвое короче; «Обе» — поровну.</p>` : ''}
-          ${f && a.review === 'draft' ? '<p class="note">Комплекс общий, составлен без специалиста: если есть диагноз, покажи его врачу или инструктору ЛФК.</p>' : ''}`;
-      }).join('')}</section>
     <section class="card"><h2>Звук и голос</h2>
       <div class="chips">${chip('Голос включён', 'voice', 'on', s.voice)}${chip('Без голоса', 'voice', 'off', !s.voice)}</div>
       ${btn('Проверить звук и голос', 'test-sound')}
@@ -675,7 +728,7 @@ function currentPhase() {
 
 export function doseFor(ex, { week, phase, light = false } = currentPhase()) {
   const base = cy.setsFor(week, phase);
-  const sets = light ? Math.max(2, base - 1) : base;
+  const sets = ex.sets || (light ? Math.max(2, base - 1) : base);
   const r = ex.reps || cy.PHASES[phase].reps;
   const side = (ex.reps && ex.reps.perSide) || ex.perSide;
   return `${sets} × ${r.min}–${r.max}${side ? ' на сторону' : ''}`;
@@ -698,7 +751,7 @@ export function renderPrograms() {
   const folder = (f) => `<section class="card"><h2>${icon(f.icon, { size: 20 })} ${esc(f.name)}</h2><p class="sub">${esc(f.desc)}</p>
     <div class="day-list">${f.programs.map((id) => {
       const p = PROGRAMS[id];
-      const n = programExercises(id, phase).length;
+      const n = programExercisesWithFocus(id, phase, S.settings).length;
       return `<button class="plan-day" data-a="prog-open" data-v="${id}"><div class="di-icon">${icon(p.kind === 'cardio' ? 'swim' : 'dumbbell')}</div>
         <div class="pd-body"><div class="di-title">${esc(p.name)}</div><div class="di-meta">${p.kind === 'cardio' ? esc(p.duration) : `${n} упражнений · ${esc(p.duration)}`}</div></div>${icon('chevR', { size: 18 })}</button>`;
     }).join('')}</div></section>`;
@@ -728,7 +781,7 @@ export function renderProgram(id) {
   const isToday = today.type === 'gym' && !today.cancelled && todaySlot === id;
   const doneToday = ST.sessionsOn(t).length > 0;
   const ph = cy.PHASES[cp.phase];
-  const exs = programExercises(id, cp.phase);
+  const exs = programExercisesWithFocus(id, cp.phase, S.settings);
   const swaps = upcomingSwaps(id, cp.phase);
   const swappedFrom = new Set(swaps.map((s) => s.from.id));
   const later = programExercises(id, 'p2').filter((e) => !exs.includes(e) && !swappedFrom.has(e.id));

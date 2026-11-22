@@ -13,11 +13,12 @@ import {
 } from './data.js';
 
 const $app = document.getElementById('app');
-import { PROGRAMS, programName, isStrength, programExercises, aquaPlan, availableExerciseIds, CUSTOM_SLOT } from './programs.js';
+import { PROGRAMS, programName, isStrength, programExercises, programExercisesWithFocus, aquaPlan, availableExerciseIds, CUSTOM_SLOT } from './programs.js';
 import * as CAT from './catalog.js';
 import * as CP from './catalog-plan.js';
 import * as BODY from './body.js';
 import * as FOC from './corrective.js';
+import * as PROF from './profile.js';
 
 // ---------- утилиты ----------
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -98,7 +99,7 @@ async function removeActivity(rec) {
 
 // ---------- логика тренировки ----------
 const phaseIdx = (p) => cy.PHASE_ORDER.indexOf(p);
-const exercisesFor = (slot, phase) => programExercises(slot, phase);
+const exercisesFor = (slot, phase) => programExercisesWithFocus(slot, phase, S.settings);
 const rangeFor = (ex, phase) => ex.reps || cy.PHASES[phase].reps;
 const perSide = (ex) => !!((ex.reps && ex.reps.perSide) || ex.perSide);
 const exSet = (ex) => S.exSettings[ex.id] || {};
@@ -114,12 +115,13 @@ const firstStage = (r) => (r.slot === 'pool' ? 'pool' : 'joints');
 const programIsLight = (r) => !!(PROGRAMS[r.slot] && PROGRAMS[r.slot].light);
 const afterMain = (r) => (hasFinish(r) ? 'pool' : 'stretch');
 
-function setsTarget(r = S.run) {
+function setsTarget(r = S.run, ex = null) {
+  if (ex && ex.sets) return ex.sets;  // у корректирующих упражнений зон внимания свои подходы
   const base = cy.setsFor(r.week, r.phase);
   return r.lightDay ? Math.max(2, base - 1) : base;
 }
 const workSets = (exId, r = S.run) => r.sets.filter((x) => x.exerciseId === exId && !x.isWarmup);
-const exComplete = (exId, r = S.run) => workSets(exId, r).length >= setsTarget(r);
+const exComplete = (exId, r = S.run) => workSets(exId, r).length >= setsTarget(r, EX_BY_ID[exId]);
 const exFinished = (exId, r = S.run) => exComplete(exId, r) || r.skipped.includes(exId);
 const currentEx = () => EX_BY_ID[S.run.order[S.run.current]];
 
@@ -386,11 +388,11 @@ function renderExercises() {
   const ex = currentEx();
   const range = rangeFor(ex, r.phase);
   const done = workSets(ex.id);
-  const target = setsTarget();
+  const target = setsTarget(r, ex);
   const unit = unitFor(ex);
   const sug = S.ui.sug;
   const pos = r.order.indexOf(ex.id);
-  const planOrder = exercisesFor(r.slot, r.phase).map((e) => e.id);
+  const planOrder = exercisesFor(r.slot, r.phase).filter((e) => !e.corrective).map((e) => e.id);  // разминочный подход предлагается у первых основных упражнений
   const canWarmup = planOrder.indexOf(ex.id) < 2 && !r.sets.some((x) => x.exerciseId === ex.id) && sug.weight != null;
   const isMachine = ex.loadType === 'machine' || ex.loadType === 'cable';
   const canSwap = canSwapEx(r, ex);
@@ -402,6 +404,7 @@ function renderExercises() {
     <p class="sub" style="margin-top:12px">Упражнение ${pos + 1} из ${r.order.length}</p>
     <h2 class="ex-name">${esc(ex.name)}</h2>
     <p class="set-line"><b>Подход ${Math.min(done.length + 1, target)} из ${target}</b> · ${range.min}–${range.max} повторов${perSide(ex) ? ' на сторону' : ''}</p>
+    ${FOC.sideNote(S.settings, ex) ? `<p class="note">${esc(FOC.sideNote(S.settings, ex))}</p>` : ''}
     ${ex.eyeNote ? `<p class="eye-note">${esc(ex.eyeNote)}</p>` : ''}
     ${canSwap ? analogsHtml(r) : ''}
     <section class="suggest"><div class="sub">Подсказка</div><div class="big-num">${bigSug}</div><p>${esc(sug.reason)}</p>
@@ -442,7 +445,7 @@ function pairBlock(ex) {
 }
 
 // Замена доступна в силовой тренировке до первого подхода этого упражнения
-const canSwapEx = (r, ex) => isStrength(r.slot) && !!CAT.verdict(ex.id).known && !r.sets.some((x) => x.exerciseId === ex.id);
+const canSwapEx = (r, ex) => isStrength(r.slot) && !ex.corrective && !!CAT.verdict(ex.id).known && !r.sets.some((x) => x.exerciseId === ex.id);
 
 // «Занято?» — аналоги на те же мышцы с другим тренажёром, тап заменяет упражнение
 function analogsHtml(r) {
@@ -635,6 +638,11 @@ function renderMeasure() {
     ${btn('Сохранить замер', 'measure-save', { cls: 'btn-primary btn-xl' })}</section>`;
 }
 
+function renderProfileScreen() {
+  if (S.form.kind !== 'profile') S.form = { kind: 'profile', heightCm: S.settings.heightCm ? String(S.settings.heightCm).replace('.', ',') : '', birthDate: S.settings.birthDate || '', sex: S.settings.profile || 'female' };
+  return V.renderProfile(S.form);
+}
+
 function renderBody() {
   if (S.form.kind !== 'body') S.form = { kind: 'body', date: cy.today(), device: 'inbody' };
   const f = S.form;
@@ -726,7 +734,7 @@ function renderOverlay() {
     const r = S.run;
     inner = `<h2>Упражнения</h2><div class="stack">${r.order.map((id, i) => {
       const n = workSets(id).length;
-      const mark = r.skipped.includes(id) ? 'пропущено' : exComplete(id) ? `✓ ${n}/${setsTarget()}` : `${n}/${setsTarget()}`;
+      const mark = r.skipped.includes(id) ? 'пропущено' : exComplete(id) ? `✓ ${n}/${setsTarget(r, EX_BY_ID[id])}` : `${n}/${setsTarget(r, EX_BY_ID[id])}`;
       return `<button class="row-btn" data-a="goto-ex" data-v="${i}" ${i === r.current ? 'aria-current="true"' : ''}><b>${i + 1}. ${esc(EX_BY_ID[id].name)}</b><span>${mark}</span></button>`;
     }).join('')}</div>${btn('Закрыть', 'close')}`;
   } else if (o.type === 'swap') {
@@ -753,7 +761,7 @@ function go(screen) {
   else if (['home', 'calendar', 'goals', 'programs'].includes(S.screen)) prevScreen = S.screen;
   S.screen = screen;
   S.overlay = null;
-  if (!['measure', 'body', 'homeLog', 'videoForm', 'videoImport'].includes(screen)) S.form = {};
+  if (!['measure', 'body', 'profile', 'homeLog', 'videoForm', 'videoImport'].includes(screen)) S.form = {};
   window.scrollTo(0, 0);
   render();
   if (S.focus) {
@@ -765,7 +773,7 @@ function go(screen) {
 
 function renderMain() {
   const screens = {
-    home: V.renderHome, calendar: V.renderCalendar, goals: V.renderGoals, settings: V.renderSettings, measure: renderMeasure, body: renderBody, homeLog: renderHomeLog,
+    home: V.renderHome, calendar: V.renderCalendar, goals: V.renderGoals, settings: V.renderSettings, measure: renderMeasure, body: renderBody, profile: renderProfileScreen, homeLog: renderHomeLog,
     videos: V.renderVideos, videoForm: V.renderVideoForm, videoImport: V.renderVideoImport,
     programs: V.renderPrograms, program: () => V.renderProgram(S.progId), catalog: V.renderCatalog,
   };
@@ -792,7 +800,7 @@ const splitV = (v) => { const i = v.indexOf('|'); return [v.slice(0, i), v.slice
 const A = {
   tab: (v) => { prevScreen = v; go(v); },
   go: (v) => {
-    if (v === 'measure' || v === 'body') S.form = {};
+    if (v === 'measure' || v === 'body' || v === 'profile') S.form = {};
     go(v);
   },
   close: () => { S.overlay = null; render(); },
@@ -1096,9 +1104,9 @@ const A = {
     const ex = currentEx();
     const idx = workSets(ex.id).length;
     r.sets.push({ exerciseId: ex.id, setIndex: idx, weight: S.ui.weight, unit: unitFor(ex), reps: S.ui.reps, breathHold: !!S.ui.breath, doneAt: nowISO() });
-    const target = setsTarget();
+    const target = setsTarget(r, ex);
     let nextText;
-    let restSec = cy.PHASES[r.phase].rest;
+    let restSec = ex.restSec ?? cy.PHASES[r.phase].rest;
     const ss = CP.supersetStep(r.pair, ex.id, (id) => exFinished(id));
     if (ss) {
       r.current = r.order.indexOf(ss.next);
@@ -1339,6 +1347,19 @@ const A = {
     await saveSettings(); render();
   },
   'focus-toggle': async (v) => { S.settings.focus = FOC.toggleFocus(S.settings.focus, v); await saveSettings(); render(); },
+  'focus-mode': async (v) => { const [id, mode] = splitV(v); S.settings.focus = FOC.setFocusMode(S.settings.focus, id, mode); await saveSettings(); render(); },
+  'p-sex': (v) => { S.form.sex = v; render(); },
+  'profile-save': async () => {
+    const f = S.form;
+    const heightCm = f.heightCm && String(f.heightCm).trim() ? num(f.heightCm) : null;
+    const err = PROF.checkProfile({ heightCm, birthDate: f.birthDate || '', sex: f.sex }, cy.today());
+    if (err) { f.error = err; render(); return; }
+    S.settings.heightCm = heightCm;
+    S.settings.birthDate = f.birthDate || '';
+    S.settings.profile = f.sex || 'female';
+    await saveSettings();
+    go('back');
+  },
   'focus-side': async (v) => { const [id, side] = splitV(v); S.settings.focus = FOC.setFocusSide(S.settings.focus, id, side); await saveSettings(); render(); },
   voice: async (v) => { S.settings.voice = v === 'on'; snd.setVoice(S.settings.voice); await saveSettings(); render(); },
   'test-sound': () => { snd.unlock(); snd.announce('Проверка. Отдых окончен. Подход 2 из 3', 'end'); },

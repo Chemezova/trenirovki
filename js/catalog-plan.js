@@ -11,6 +11,8 @@ export const pairRestText = (baseRest = 90) => (baseRest > 60 ? PAIR_REST : '30�
 export const PAIR_REST_CARE = 'Короткий отдых сильнее учащает пульс и давление. Если появилось давление в глазах, тяжесть в голове или хочется задержать дыхание — отдыхай полностью, как в программе. Пока не уверена — спроси офтальмолога.';
 
 const meta = (id) => EXERCISE_META[id] || null;
+// корректирующие упражнения зон внимания в баланс нагрузки по группам мышц не входят
+const counted = (id) => !!meta(id) && !meta(id).corrective;
 export const roleOf = (id) => { const m = meta(id); return m ? PATTERN_ROLE[m.pattern] || 'other' : 'other'; };
 export const regionOf = (id) => { const r = roleOf(id); return r === 'pull' || r === 'push' ? 'upper' : r; };
 export const groupsOf = (id) => { const m = meta(id); return m ? [...new Set(m.primary.map((x) => MUSCLES[x] && MUSCLES[x].group).filter(Boolean))] : []; };
@@ -175,12 +177,12 @@ export function setAnalysis(ids, { available, conditionIds = [], sets = SETS_DEF
 // Баланс за последние дни по сделанным подходам. sessions — как в S.sessions; today — 'ГГГГ-ММ-ДД'.
 export function historyBalance(sessions, today, { days = 14 } = {}) {
   const inRange = sessions.filter((s) => s.date && daysBetween(s.date, today) >= 0 && daysBetween(s.date, today) < days)
-    .filter((s) => (s.sets || []).some((x) => !x.isWarmup && meta(x.exerciseId)))
+    .filter((s) => (s.sets || []).some((x) => !x.isWarmup && counted(x.exerciseId)))
     .sort((a, b) => a.date.localeCompare(b.date));
   const shareOf = (sets) => {
     const g = {}; let total = 0;
     for (const x of sets) {
-      if (x.isWarmup || !meta(x.exerciseId)) continue;
+      if (x.isWarmup || !counted(x.exerciseId)) continue;
       const gs = groupsOf(x.exerciseId);
       for (const k of gs) g[k] = (g[k] || 0) + 1 / gs.length;
       total++;

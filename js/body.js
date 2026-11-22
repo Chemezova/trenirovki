@@ -2,6 +2,8 @@
 // Записи лежат в хранилище «measurements» с признаком kind: 'body' — так они сами попадают в копию данных.
 // Приборы дают разные цифры, поэтому каждая запись помнит свой прибор, а сравнение идёт только внутри одного прибора.
 
+import { fatRange } from './profile.js';
+
 export const BODY_KIND = 'body';
 // Вес с анализатора хранится в bodyKg, а не weightKg: weightKg читают график и подсчёты «Вес», туда анализатор (днём, в одежде) не должен попадать.
 export const BODY_INTERVAL_DAYS = 28;   // как часто стоит проходить анализ (напоминание)
@@ -10,8 +12,6 @@ export const DEVICES = {
   vesna: 'Старый анализатор (клуб «Весна»)',
   other: 'Другой прибор',
 };
-// Ориентир по проценту жира для женщин — по бланку InBody; черновик (profile → в настройки)
-export const FAT_PCT_NORM = { female: [18, 28] };
 
 const dayNum = (d) => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)) / 86400000;
 const addDays = (d, n) => new Date((dayNum(d) + n) * 86400000).toISOString().slice(0, 10);
@@ -60,9 +60,9 @@ export function fatToTarget(rec, targetPct) {
   return x > 0 ? r1(x) : 0;
 }
 
-// Где процент жира относительно нормы: 'below' / 'in' / 'above'
-export function fatZone(pct, profile = 'female') {
-  const [lo, hi] = FAT_PCT_NORM[profile] || FAT_PCT_NORM.female;
+// Где процент жира относительно ориентира: 'below' / 'in' / 'above'. Ориентир по полу и возрасту — profile.fatRange.
+export function fatZone(pct, sex = 'female', age = null) {
+  const [lo, hi] = (fatRange(sex, age) || fatRange('female', null)).range;
   return pct < lo ? 'below' : pct > hi ? 'above' : 'in';
 }
 

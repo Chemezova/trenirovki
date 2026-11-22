@@ -10,6 +10,8 @@ export const MUSCLE_GROUPS = {
   legs: 'Ноги', glutes: 'Ягодицы', back: 'Спина', shoulders: 'Плечи', chest: 'Грудь', arms: 'Руки', core: 'Кор',
 };
 
+import { CORRECTIVE_META } from './corrective.js';
+
 export const MUSCLES = {
   quads: { name: 'Передняя поверхность бедра', group: 'legs' },
   hamstrings: { name: 'Задняя поверхность бедра', group: 'legs' },
@@ -21,6 +23,7 @@ export const MUSCLES = {
   lats: { name: 'Широчайшие', group: 'back' },
   'mid-back': { name: 'Середина спины', group: 'back' },
   'spinal-extensors': { name: 'Разгибатели спины', group: 'back' },
+  'scapular-stab': { name: 'Стабилизаторы лопатки', group: 'back' },
   'rear-delts': { name: 'Задняя дельта', group: 'shoulders' },
   'side-delts': { name: 'Средняя дельта', group: 'shoulders' },
   'front-delts': { name: 'Передняя дельта', group: 'shoulders' },
@@ -39,6 +42,9 @@ export const EQUIPMENT = {
   platform: { name: 'Платформа 20–30 см' },
   support: { name: 'Опора (стойка, перила)' },
   mat: { name: 'Коврик' },
+  wall: { name: 'Свободная стена' },
+  band: { name: 'Лёгкая резинка' },
+  'no-equipment': { name: 'Без оборудования' },
   'leg-extension-machine': { name: 'Тренажёр разгибания ног' },
   'leg-curl-machine': { name: 'Тренажёр сгибания ног' },
   'lat-pulldown-machine': { name: 'Тренажёр тяги сверху' },
@@ -122,6 +128,7 @@ export const PATTERN_ROLE = {
   'vertical-pull': 'pull', 'horizontal-pull': 'pull', 'rear-delt-pull': 'pull', 'lat-isolation': 'pull', 'elbow-flexion': 'pull',
   'horizontal-push': 'push', 'incline-push': 'push', 'chest-fly': 'push', 'lateral-raise': 'push', 'elbow-extension': 'push',
   'core-stability': 'core', 'anti-rotation': 'core', rotation: 'core', 'lateral-flexion': 'core', carry: 'core', 'leg-raise': 'core', 'trunk-flexion': 'core', 'upright-row': 'pull',
+  'scapular-control': 'prep',  // подготовка лопатки (зоны внимания), в подборе пар и балансе не участвует
 };
 
 // Пары движений-«противников»: одна мышца работает, пока другая отдыхает
@@ -203,3 +210,6 @@ export const EXERCISE_META = {
   'captain-chair-knee-raise': { pattern: 'leg-raise', primary: ['abs', 'core-deep'], secondary: ['hip-flexors'], equipment: ['captain-chair'], tags: ['breath_hold_risk', 'intra_abdominal_pressure'] },
   'machine-ab-crunch': { pattern: 'trunk-flexion', primary: ['abs'], secondary: ['obliques', 'core-deep'], equipment: ['ab-crunch-machine'], tags: ['breath_hold_risk', 'intra_abdominal_pressure'] },
 };
+
+// упражнения зон внимания (лопатка и др.): описание лежит рядом с самими упражнениями в corrective.js
+Object.assign(EXERCISE_META, CORRECTIVE_META);
