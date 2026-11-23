@@ -1,5 +1,6 @@
 // «Зоны внимания»: корректирующие упражнения (ЛФК) для проблемной зоны. Чистая логика без доступа к состоянию.
-// Зона включается в профиле: settings.focus = [{ id: 'scapula', side: 'left' | 'right' | 'both', mode: 'inline' | 'block' }].
+// Зона включается в профиле: settings.focus = [{ id: 'scapula', side: 'left' | 'right' | 'both', mode: 'home' | 'inline' | 'block' }].
+//   home   — дома, в комплексе «Осанка и лопатка» (по умолчанию: зал остаётся для тренажёров и весов);
 //   inline — упражнения встают в начало каждой силовой тренировки как обычные (подходы, повторы, описание);
 //   block  — короткий отдельный блок по таймеру после суставной разминки.
 // Новая зона (шея, грудной отдел, стопа…) — это новая запись в FOCUS_AREAS, код менять не нужно.
@@ -73,7 +74,7 @@ export const CORR_SETS = 2;
 export const CORR_REST_SEC = 30;
 
 export const FOCUS_SIDES = { left: 'Левая', right: 'Правая', both: 'Обе' };
-export const FOCUS_MODES = { inline: 'В тренировках (как упражнения)', block: 'Отдельным блоком по таймеру' };
+export const FOCUS_MODES = { home: 'Дома, в комплексе «Осанка и лопатка»', inline: 'В зале, как упражнения тренировки', block: 'В зале, коротким блоком перед тренировкой' };
 const SIDE_WORD = { left: 'левая', right: 'правая' };
 const OTHER = { left: 'right', right: 'left' };
 
@@ -96,7 +97,7 @@ export function activeFocus(settings) {
   for (const f of (settings && settings.focus) || []) {
     if (!f || !FOCUS_AREAS[f.id] || seen.has(f.id)) continue;
     seen.add(f.id);
-    out.push({ id: f.id, side: FOCUS_SIDES[f.side] ? f.side : 'both', mode: FOCUS_MODES[f.mode] ? f.mode : 'inline' });
+    out.push({ id: f.id, side: FOCUS_SIDES[f.side] ? f.side : 'both', mode: FOCUS_MODES[f.mode] ? f.mode : 'home' });
   }
   return out;
 }
@@ -104,7 +105,7 @@ export function activeFocus(settings) {
 export function toggleFocus(list, id) {
   const l = list || [];
   if (!FOCUS_AREAS[id]) return l;
-  return l.some((f) => f.id === id) ? l.filter((f) => f.id !== id) : [...l, { id, side: 'both', mode: 'inline' }];
+  return l.some((f) => f.id === id) ? l.filter((f) => f.id !== id) : [...l, { id, side: 'both', mode: 'home' }];
 }
 export function setFocusSide(list, id, side) {
   return FOCUS_SIDES[side] ? (list || []).map((f) => (f.id === id ? { ...f, side } : f)) : list || [];
@@ -117,21 +118,37 @@ const idsOf = (settings, mode) => activeFocus(settings).filter((f) => f.mode ===
 // Упражнения, которые встают в начало силовых тренировок (режим «в тренировках»)
 export const inlineExerciseIds = (settings) => idsOf(settings, 'inline');
 
-// План отдельного блока (режим «отдельным блоком»): плоский список шагов { areaId, id, name, hint, sec, side? }.
+// План одной зоны: плоский список шагов { areaId, id, name, hint, sec, side? }.
 // Упражнение «на одну сторону» делается сначала на выбранной стороне (полное время), затем на другой (вдвое короче).
 // «Обе» — поровну, левая первой.
-export function focusPlan(settings) {
+export function areaPlan(id, side = 'both') {
+  const a = FOCUS_AREAS[id];
+  if (!a) return [];
   const plan = [];
-  for (const { id, side, mode } of activeFocus(settings)) {
-    if (mode !== 'block') continue;
-    const a = FOCUS_AREAS[id];
-    for (const it of a.exercises) {
-      if (!it.perSide || !a.sided) { plan.push({ areaId: id, id: it.id, name: it.name, hint: it.hint, sec: it.sec }); continue; }
-      const order = side === 'both' ? [['left', it.sec], ['right', it.sec]] : [[side, it.sec], [OTHER[side], Math.round(it.sec / 2)]];
-      for (const [sd, sec] of order) plan.push({ areaId: id, id: it.id, name: `${it.name} (${SIDE_WORD[sd]})`, hint: it.hint, sec, side: sd });
-    }
+  for (const it of a.exercises) {
+    if (!it.perSide || !a.sided) { plan.push({ areaId: id, id: it.id, name: it.name, hint: it.hint, sec: it.sec }); continue; }
+    const order = side === 'both' || !OTHER[side] ? [['left', it.sec], ['right', it.sec]] : [[side, it.sec], [OTHER[side], Math.round(it.sec / 2)]];
+    for (const [sd, sec] of order) plan.push({ areaId: id, id: it.id, name: `${it.name} (${SIDE_WORD[sd]})`, hint: it.hint, sec, side: sd });
   }
   return plan;
+}
+
+// План отдельного блока в зале (режим «блоком»)
+export function focusPlan(settings) {
+  return activeFocus(settings).filter((f) => f.mode === 'block').flatMap((f) => areaPlan(f.id, f.side));
+}
+
+// Домашний комплекс «Осанка и лопатка»: зоны в режиме «дома»; если таких нет, берётся лопатка на обе стороны
+export function homeFocusPlan(settings) {
+  const home = activeFocus(settings).filter((f) => f.mode === 'home');
+  return (home.length ? home : [{ id: 'scapula', side: 'both' }]).flatMap((f) => areaPlan(f.id, f.side));
+}
+
+// Один раз при переходе на v29: зоны, которые стояли «в тренировках» (так было по умолчанию в v28), переезжают домой.
+// Возвращает новый список или тот же, если переносить нечего. Флаг focusV29 ставит вызывающий.
+export function migrateFocus(settings) {
+  if (!settings || settings.focusV29) return settings && settings.focus;
+  return (settings.focus || []).map((f) => (f && f.mode === 'inline' ? { ...f, mode: 'home' } : f));
 }
 
 export const planSeconds = (plan) => plan.reduce((t, x) => t + x.sec, 0);

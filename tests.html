@@ -496,7 +496,7 @@ eq('состав тела: все записи помечены kind body', HIST
 const fs = (side, mode = 'block') => ({ focus: [{ id: 'scapula', side, mode }] });
 const names = (p) => p.map((x) => x.name);
 eq('зоны внимания: ничего не включено — блока и упражнений нет', [focusPlan({}).length, focusPlan({ focus: [] }).length, focusPlan(undefined).length, inlineExerciseIds({}).length], [0, 0, 0, 0]);
-eq('зоны внимания: неизвестная зона и повтор отбрасываются, сторона и режим по умолчанию', activeFocus({ focus: [{ id: 'x' }, { id: 'scapula', side: 'q', mode: 'z' }, { id: 'scapula', side: 'left' }, null] }), [{ id: 'scapula', side: 'both', mode: 'inline' }]);
+eq('зоны внимания: неизвестная зона и повтор отбрасываются, сторона и режим по умолчанию', activeFocus({ focus: [{ id: 'x' }, { id: 'scapula', side: 'q', mode: 'z' }, { id: 'scapula', side: 'left' }, null] }), [{ id: 'scapula', side: 'both', mode: 'home' }]);
 eq('зоны внимания: режим «в тренировках» не даёт таймерного блока, режим «блок» не даёт упражнений', [focusPlan(fs('left', 'inline')).length, inlineExerciseIds(fs('left', 'block')).length], [0, 0]);
 eq('зоны внимания: левая сторона — левая первой и дольше, правая вдвое короче', focusPlan(fs('left')).filter((x) => x.id === 'wall-slide').map((x) => [x.side, x.sec]), [['left', 30], ['right', 15]]);
 eq('зоны внимания: правая сторона — правая первой', focusPlan(fs('right')).filter((x) => x.id === 'wall-slide').map((x) => [x.side, x.sec]), [['right', 30], ['left', 15]]);
@@ -504,7 +504,38 @@ eq('зоны внимания: «обе» — поровну, левая пер�
 eq('зоны внимания: порядок блока и упражнения без стороны один раз', names(focusPlan(fs('left'))), ['Лопатки вниз и назад', 'Ангелы у стены', 'Скольжение предплечья по стене (левая)', 'Скольжение предплечья по стене (правая)', 'Тяга лёгкой резинки к поясу', 'Выталкивание от стены']);
 eq('зоны внимания: время блока 3–6 минут при любой стороне', ['left', 'right', 'both'].map((x) => planMinutes(focusPlan(fs(x))) >= 3 && planMinutes(focusPlan(fs(x))) <= 6), [true, true, true]);
 eq('зоны внимания: время считается суммой шагов', planSeconds(focusPlan(fs('left'))), 40 + 45 + 30 + 15 + 40 + 30);
-eq('зоны внимания: включить, сменить сторону и режим, выключить', (() => { let l = toggleFocus([], 'scapula'); const a = JSON.stringify(l); l = setFocusSide(l, 'scapula', 'left'); l = setFocusMode(l, 'scapula', 'block'); const b = JSON.stringify(l); l = setFocusSide(setFocusMode(l, 'scapula', 'bad'), 'scapula', 'bad'); const c = JSON.stringify(l); l = toggleFocus(l, 'scapula'); return [a, b, c === b, l, toggleFocus([], 'нет')]; })(), ['[{"id":"scapula","side":"both","mode":"inline"}]', '[{"id":"scapula","side":"left","mode":"block"}]', true, [], []]);
+eq('зоны внимания: включить, сменить сторону и режим, выключить', (() => { let l = toggleFocus([], 'scapula'); const a = JSON.stringify(l); l = setFocusSide(l, 'scapula', 'left'); l = setFocusMode(l, 'scapula', 'block'); const b = JSON.stringify(l); l = setFocusSide(setFocusMode(l, 'scapula', 'bad'), 'scapula', 'bad'); const c = JSON.stringify(l); l = toggleFocus(l, 'scapula'); return [a, b, c === b, l, toggleFocus([], 'нет')]; })(), ['[{"id":"scapula","side":"both","mode":"home"}]', '[{"id":"scapula","side":"left","mode":"block"}]', true, [], []]);
+
+// домашние комплексы
+const CXM = await import('./js/complexes.js');
+const { homeFocusPlan, migrateFocus, areaPlan } = await import('./js/corrective.js');
+eq('миграция: «в тренировках» → «дома», блок не трогаем', migrateFocus({ focus: [{ id: 'scapula', side: 'left', mode: 'inline' }, { id: 'x', mode: 'block' }] }), [{ id: 'scapula', side: 'left', mode: 'home' }, { id: 'x', mode: 'block' }]);
+eq('миграция: уже сделана — без изменений', migrateFocus({ focusV29: true, focus: [{ id: 'scapula', mode: 'inline' }] }), [{ id: 'scapula', mode: 'inline' }]);
+eq('комплекс «Осанка»: без настроек — лопатка на обе стороны', homeFocusPlan({}).length, areaPlan('scapula', 'both').length);
+eq('комплекс «Осанка»: зона в режиме «в зале» не попадает домой, берётся по умолчанию', homeFocusPlan({ focus: [{ id: 'scapula', side: 'left', mode: 'inline' }] }).length, areaPlan('scapula', 'both').length);
+eq('комплекс «Осанка»: сторона учитывается', homeFocusPlan({ focus: [{ id: 'scapula', side: 'left', mode: 'home' }] }).filter((x) => x.id === 'wall-slide').map((x) => x.sec), [30, 15]);
+eq('все три комплекса не пустые', CXM.COMPLEX_IDS.map((id) => CXM.complexPlan(id, {}).length > 0), [true, true, true]);
+eq('«Кор на коврике»: у каждого упражнения есть вариант без коврика', CXM.complexPlan('core', {}).every((x) => x.noMat), true);
+const c0 = CXM.complexPlan('core', {});
+const offOne = CXM.toggleStep({}, 'core', c0[1].key, CXM.baseSteps('core', {}));
+eq('комплекс: убрать упражнение', CXM.complexPlan('core', { complexes: offOne }).map((x) => x.key), c0.filter((_, i) => i !== 1).map((x) => x.key));
+const back = CXM.toggleStep(offOne, 'core', c0[1].key, CXM.baseSteps('core', {}));
+eq('комплекс: вернуть упражнение', CXM.complexPlan('core', { complexes: back }).length, c0.length);
+let allOff = {}; for (const x of c0) allOff = CXM.toggleStep(allOff, 'core', x.key, CXM.baseSteps('core', {}));
+eq('комплекс: последнее упражнение убрать нельзя', CXM.complexPlan('core', { complexes: allOff }).length, 1);
+eq('комплекс: время шага меняется', CXM.complexPlan('core', { complexes: CXM.bumpStep({}, 'core', c0[0].key, c0[0].sec, 15) })[0].sec, c0[0].sec + 15);
+eq('комплекс: время шага не меньше 10 с', CXM.complexPlan('core', { complexes: CXM.bumpStep({}, 'core', c0[0].key, 15, -100) })[0].sec, 10);
+eq('комплекс: минуты округляются, не меньше 1', [CXM.complexMinutes([{ sec: 20 }]), CXM.complexMinutes([{ sec: 150 }, { sec: 150 }])], [1, 5]);
+eq('коврик: упражнения на коврике уходят в конец, порядок сохраняется', CXM.matLast(['dead-bug', 'leg-extension', 'bird-dog', 'seated-row']), ['leg-extension', 'seated-row', 'dead-bug', 'bird-dog']);
+eq('без коврика: подсказка для «мёртвого жука» есть, для жима нет', [!!CXM.noMatHint('dead-bug'), CXM.noMatHint('chest-press')], [true, '']);
+// длительности из настроек
+const { durations } = await import('./js/stats.js');
+eq('длительности: по умолчанию', [durations({}).gym, durations({}).pool, durations({}).class], [50, 35, 55]);
+eq('длительности: свои значения', [durations({ durations: { gym: 70, pool: 20 } }).gym, durations({ durations: { gym: 70, pool: 20 } }).pool], [70, 20]);
+eq('длительности: мусор игнорируется', durations({ durations: { gym: 'x', pool: 1 } }).gym, 50);
+S.settings = { ...S.settings, durations: { gym: 70 } };
+eq('время зала берётся из настроек', gymMinutes({ slot: 'A', retro: true }), 70);
+S.settings = { ...S.settings, durations: {} };
 eq('зоны внимания: подпись зоны', [focusLabel(fs('left')), focusLabel(fs('both'))], [['Лопатка (левая)'], ['Лопатка']]);
 eq('зоны внимания: комплекс помечен черновиком (без специалиста)', FOCUS_AREAS.scapula.review, 'draft');
 eq('зоны внимания: упражнения есть в приложении, каталоге и без оборудования-вне-списка', CORRECTIVE_EXERCISES.filter((e) => !EX_BY_ID[e.id] || !EXERCISE_META[e.id] || !EXERCISE_META[e.id].corrective || e.sets !== 2 || e.restSec !== 30 || e.loadType !== 'bodyweight').map((e) => e.id), []);

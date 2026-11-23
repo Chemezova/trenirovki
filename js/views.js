@@ -10,6 +10,7 @@ import * as CAT from './catalog.js';
 import * as CP from './catalog-plan.js';
 import * as BODY from './body.js';
 import * as FOC from './corrective.js';
+import * as CX from './complexes.js';
 import * as PROF from './profile.js';
 import { EXERCISE_META, MUSCLES, MUSCLE_GROUPS, CONDITIONS } from './catalog-data.js';
 import { hasRuVoice } from './sound.js';
@@ -41,6 +42,19 @@ const fmtN = (n) => Math.round(n).toLocaleString('ru-RU');
 // ---------- элементы дня ----------
 function tick(action, v, pressed, { disabled = false, label = 'Отметить' } = {}) {
   return `<button class="tick" data-a="${action}" data-v="${esc(v)}" aria-pressed="${pressed}" aria-label="${label}" ${disabled ? 'disabled' : ''}>${icon(pressed ? 'check' : 'plus', { size: 20 })}</button>`;
+}
+
+// Домашние комплексы дня: нажать — откроется список и таймер; выполненный можно снять отметкой
+function complexRowsHtml(date, canEdit, future, past) {
+  return CX.COMPLEX_IDS.map((id) => {
+    const c = CX.COMPLEXES[id];
+    const done = ST.activitiesOn(date).find((a) => a.kind === 'complex' && a.complexId === id);
+    const min = CX.complexMinutes(CX.complexPlan(id, S.settings));
+    const meta = done ? `${done.minutes} мин` : `${min} мин${c.mat ? ' · коврик' : ''}`;
+    const open = !done && !future && canEdit;
+    const act = done ? tick('cx-undo', `${date}|${id}`, true, { disabled: !canEdit, label: c.name }) : '';
+    return `<div class="day-item ${done ? 'is-done' : past ? 'is-past' : 'is-suggest'} ${open ? 'is-tappable' : ''}" ${open ? `data-a="cx-open" data-v="${esc(`${date}|${id}`)}" role="button" tabindex="0"` : ''}><div class="di-icon">${icon(c.icon)}</div><div class="di-body"><div class="di-title">${esc(c.name)}</div><div class="di-meta">${esc(meta)}</div></div>${act}</div>`;
+  });
 }
 
 export function dayItemsHtml(date) {
@@ -84,6 +98,7 @@ export function dayItemsHtml(date) {
       const rowAct = !future && canEdit && act ? `data-a="h-toggle" data-v="${esc(`${date}|${it.kind === 'video' ? (done ? done.kind : 'circuit') : it.kind}`)}" role="button" tabindex="0"` : '';
       rows.push(`<div class="day-item ${cls} ${rowAct ? 'is-tappable' : ''}" ${rowAct}><div class="di-icon">${icon(it.icon)}</div><div class="di-body"><div class="di-title">${esc(it.name)}</div><div class="di-meta">${esc(meta)}</div>${choices}</div>${act}</div>`);
     }
+    if (!d.cancelled) rows.push(...complexRowsHtml(date, canEdit, future, past));
   }
 
   // ходьба за день — отдельный блок, как полноценная активность (шаги из Здоровья или вручную)
@@ -118,7 +133,7 @@ export function dayItemsHtml(date) {
     const poolDone = !!poolAct || poolInSession > 0;
     // санитарный день: бассейн закрыт, отмечать нечего (если отметка уже есть — показываем как обычно)
     const closedRow = poolShut && !poolDone;
-    const poolMeta = poolAct ? `${poolAct.minutes || ST.DEFAULT_MIN.pool} мин` : poolInSession ? `${poolInSession} мин · из тренировки` : closedRow ? cy.capitalize(P.POOL_SANITARY_TEXT) : past ? 'не отмечено' : `Свободно: ${P.poolFreeText(date)}`;
+    const poolMeta = poolAct ? `${poolAct.minutes || ST.durations().pool} мин` : poolInSession ? `${poolInSession} мин · из тренировки` : closedRow ? cy.capitalize(P.POOL_SANITARY_TEXT) : past ? 'не отмечено' : `Свободно: ${P.poolFreeText(date)}`;
     const pv = esc(`${date}|pool`);
     const tappable = !closedRow && !poolInSession && !future && canEdit;
     rows.push(`<div class="day-item ${poolDone ? 'is-done' : closedRow ? 'is-past' : past ? 'is-past' : 'is-suggest'} ${tappable ? 'is-tappable' : ''}" ${tappable ? `data-a="h-toggle" data-v="${pv}" role="button" tabindex="0"` : ''}><div class="di-icon">${icon('swim')}</div><div class="di-body"><div class="di-title">Бассейн</div><div class="di-meta">${esc(poolMeta)}</div></div>${poolInSession || closedRow ? '' : tick('h-toggle', `${date}|pool`, !!poolAct, { disabled: future || !canEdit, label: 'Бассейн' })}</div>`);
@@ -136,7 +151,9 @@ export function dayItemsHtml(date) {
       return `<div class="day-item is-suggest"><div class="di-icon">${icon('group')}</div><div class="di-body"><div class="di-title">${c.time} ${esc(c.name)}${stars(c.stars)}${badge}</div><div class="di-meta">${esc(c.note)}</div></div>${action}</div>`;
     }).join('')}</div><p class="note">Звёзды — польза для твоей цели. Одно занятие в день, в дополнение к залу или бассейну.</p></details>`;
   }
-  return `<div class="day-list">${rows.join('')}</div>${classesHtml}`;
+  const cxHtml = d.type === 'gym' && !d.cancelled && (!past || canEdit)
+    ? `<details class="classes"><summary>Дома: комплексы · ${CX.COMPLEX_IDS.length}</summary><div class="day-list">${complexRowsHtml(date, canEdit, future, past).join('')}</div><p class="note">Осанка, кор на коврике, разминка суставов. Состав и время каждого упражнения можно поменять внутри.</p></details>` : '';
+  return `<div class="day-list">${rows.join('')}</div>${classesHtml}${cxHtml}`;
 }
 
 function dayDone(date) {
@@ -659,6 +676,11 @@ export function renderSettings() {
       <label class="field">Цель, минус кг<input type="text" inputmode="decimal" data-f="goalLossKg" value="${esc(dec(s.goalLossKg))}"></label>
       <label class="field">Шагов в день (цель)<input type="text" inputmode="numeric" data-f="stepsGoal" value="${esc(String(P.stepsGoalDay(s)))}"></label>
       <p class="note">В неделю выйдет ${fmtN(P.stepsGoalWeek(s))}. Поставь столько, сколько реально выходит в обычные дни, — потом можно поднять.</p>
+      <fieldset><legend>Обычная длительность, мин</legend>
+        <label class="field">Зал (силовая)<input type="text" inputmode="numeric" data-f="dur-gym" value="${ST.durations(s).gym}"></label>
+        <label class="field">Бассейн<input type="text" inputmode="numeric" data-f="dur-pool" value="${ST.durations(s).pool}"></label>
+        <label class="field">Групповое занятие<input type="text" inputmode="numeric" data-f="dur-class" value="${ST.durations(s).class}"></label>
+        <p class="note">Так считается время дня, если таймер не вёл счёт точно или занятие отмечено задним числом. Поставь, как обычно получается у тебя.</p></fieldset>
       <label class="field">Как к тебе обращаться<input type="text" data-f="name" value="${esc(s.name || '')}" placeholder="Елена"></label></section>
     <section class="card"><h2>Мой зал</h2>
       <p>Если чем-то пользоваться неудобно, в «Занято? Аналоги» и в каталоге будут только варианты без этого.</p>

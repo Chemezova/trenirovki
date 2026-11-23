@@ -18,6 +18,7 @@ import * as CAT from './catalog.js';
 import * as CP from './catalog-plan.js';
 import * as BODY from './body.js';
 import * as FOC from './corrective.js';
+import * as CX from './complexes.js';
 import * as PROF from './profile.js';
 
 // ---------- утилиты ----------
@@ -49,6 +50,12 @@ async function load() {
   S.run = sessions.find((s) => s.status === 'in_progress') || null;
   S.sessions = sessions.filter((s) => s.status !== 'in_progress');
   S.measurements = await db.getAll('measurements');
+  // один раз при переходе на v29: упражнения для зон внимания, стоявшие «в тренировках», переезжают в домашний комплекс
+  if (!S.settings.focusV29) {
+    S.settings.focus = FOC.migrateFocus(S.settings);
+    S.settings.focusV29 = true;
+    await db.kvSet('settings', S.settings);
+  }
   // один раз: прошлые анализы состава тела (бланки 2011–2015 и InBody от 21.11.2026); удалённые обратно не возвращаются
   if (!(await db.kvGet('bodySeedDone'))) {
     for (const r of BODY.HISTORY_SEED) {
@@ -209,7 +216,7 @@ async function startSession(slot, walked, gymKind = 'gym', finisher = 'pool', cu
   const r = {
     id: uid(), cycleId: 'c1', slot, day: slot, date, plannedDate: date, week, phase, intro: week === 0, gymKind, finisher,
     status: 'in_progress', statusManual: false, checkInAt: nowISO(), sets: [], lightDay: !!(PROGRAMS[slot] && PROGRAMS[slot].light), aborted: false,
-    stage: 'wellbeing', wellbeing: {}, order: customOrder || (isStrength(slot) ? exercisesFor(slot, phase).map((e) => e.id) : []),
+    stage: 'wellbeing', wellbeing: {}, order: customOrder || (isStrength(slot) ? CX.matLast(exercisesFor(slot, phase).map((e) => e.id)) : []),
     skipped: [], current: 0, rest: null, timer: null, note: '',
   };
   if (walked) await addActivity({ kind: 'walk', commute: 'to', distanceKm: S.settings.commuteKm, sessionId: r.id });
@@ -249,6 +256,7 @@ function tick() {
     lastClock = clock;
     $app.querySelectorAll('[data-clock]').forEach((el) => { el.textContent = clock; });
   }
+  tickComplex();
   const r = S.run;
   if (!r) return;
   const now = Date.now();
@@ -283,6 +291,27 @@ function tick() {
   }
   if (changed) saveRun();
   if (rerender && S.screen === 'workout') render();
+}
+
+// Таймер домашнего комплекса (S.cx) идёт отдельно от тренировки, но по тем же меткам времени
+function tickComplex() {
+  const c = S.cx;
+  const t = c && c.timer;
+  if (!t || t.done) return;
+  const st = tState(t);
+  if (!st.done) {
+    if (st.idx !== t.lastSeg) {
+      t.lastSeg = st.idx;
+      const seg = t.segments[st.idx];
+      if (seg.say) snd.announce(seg.say, seg.beep || 'short');
+      if (S.screen === 'complex') render();
+    }
+    if (S.screen === 'complex') updateTimerDom('timer', st, t);
+  } else {
+    t.done = true;
+    snd.announce(t.endSay || 'Время', 'end');
+    if (S.screen === 'complex') render();
+  }
 }
 
 function updateTimerDom(key, st, t) {
@@ -354,6 +383,38 @@ function renderCorrective() {
   const item = plan[tState(t).idx] || plan[0];
   return `${head}${timerBlock('timer', t, { showTotal: true })}<p class="lead">${esc(item.hint)}</p>${notes}
     ${btn(t.pausedAt ? 'Продолжить' : 'Пауза', 'timer-pause')}${btn('Следующее', 'timer-next')}${btn('К разминке', 'corr-done', { cls: 'btn-primary' })}`;
+}
+
+// Домашний комплекс: список упражнений, потом таймер с голосом, как у разминки
+// Состав комплекса под себя: убрать упражнение и поменять время (шаг 5 секунд)
+function cxEditor(c) {
+  const on = new Map(c.plan.map((x) => [x.key, x]));
+  return `<fieldset><legend>Что входит в комплекс</legend>${CX.baseSteps(c.id, S.settings).map((b) => {
+    const x = on.get(b.key);
+    return `<div class="day-item ${x ? '' : 'is-past'}"><div class="di-body"><div class="di-title">${esc(b.name)}</div><div class="di-meta">${x ? `${x.sec} с` : 'не входит'}</div></div>
+      ${x ? `<button class="icon-btn" data-a="cx-sec" data-v="${esc(b.key)}|-5" aria-label="Меньше времени">−</button><button class="icon-btn" data-a="cx-sec" data-v="${esc(b.key)}|5" aria-label="Больше времени">+</button>` : ''}
+      <button class="btn-small btn-secondary" data-a="cx-step" data-v="${esc(b.key)}">${x ? 'Убрать' : 'Вернуть'}</button></div>`;
+  }).join('')}</fieldset>`;
+}
+
+function renderComplex() {
+  const c = S.cx;
+  if (!c) return V.renderHome();
+  const def = CX.COMPLEXES[c.id];
+  const t = c.timer;
+  const head = `<header class="page-title"><button class="icon-btn" data-a="cx-close" aria-label="Назад">${icon('back')}</button><h1>${esc(def.name)}</h1></header>`;
+  const noMat = (x) => (x.noMat ? `<br><span class="sub">${esc(x.noMat)}</span>` : '');
+  if (!t) {
+    return `${head}<section class="card"><p class="lead">${CX.complexMinutes(c.plan)} мин. ${def.mat ? 'Понадобится коврик, достать нужно один раз.' : 'Голос подскажет, когда менять упражнение.'}</p>
+      <ol class="list">${c.plan.map((x) => `<li><b>${esc(x.name)}</b> · ${x.sec} с — ${esc(x.hint)}${noMat(x)}</li>`).join('')}</ol>
+      <p class="note">${esc(CX.complexNote(c.id, S.settings))}</p>
+      ${btn('Старт', 'cx-start', { cls: 'btn-primary btn-xl' })}${btn('Уже сделано', 'cx-done')}${btn(c.edit ? 'Готово' : 'Подогнать под себя', 'cx-edit', { cls: 'btn-link' })}
+      ${c.edit ? cxEditor(c) : ''}</section>`;
+  }
+  if (t.done) return `${head}<section class="card"><h2>Комплекс окончен</h2>${btn('Записать', 'cx-finish', { cls: 'btn-primary btn-xl' })}</section>`;
+  const item = c.plan[tState(t).idx] || c.plan[0];
+  return `${head}<section class="card">${timerBlock('timer', t, { showTotal: true })}<p class="lead">${esc(item.hint)}${noMat(item)}</p>
+    ${btn(t.pausedAt ? 'Продолжить' : 'Пауза', 'cx-pause')}${btn('Следующее', 'cx-next')}${btn('Закончить и записать', 'cx-finish', { cls: 'btn-primary' })}</section>`;
 }
 
 function renderWarmup() {
@@ -457,8 +518,10 @@ function analogsHtml(r) {
     conditionIds: CAT.activeConditions(S.settings, r.wellbeing),
     limit: needs ? 4 : 3,
   });
-  if (!list.length) return '';
-  return `<section class="analogs"><div class="sub">${needs ? 'Без коврика: варианты на те же мышцы' : 'Занято? Аналоги на те же мышцы'}</div>
+  const matHint = CX.needsMat(currentEx().id) ? CX.noMatHint(currentEx().id) : '';
+  const matNote = matHint ? `<p class="note">${esc(matHint)}</p>` : '';
+  if (!list.length) return matNote ? `<section class="analogs">${matNote}</section>` : '';
+  return `<section class="analogs">${matNote}<div class="sub">${needs ? 'Без коврика: варианты на те же мышцы' : 'Занято? Аналоги на те же мышцы'}</div>
     <div class="chips">${list.map((x) => `<button class="chip" data-a="swap-pick" data-v="${x.id}">${esc(CAT.equipmentName(x.machine))}<small>${esc(EX_BY_ID[x.id].name)}${x.level === 'caution' ? ' · осторожно' : ''}</small></button>`).join('')}</div></section>`;
 }
 
@@ -773,7 +836,7 @@ function go(screen) {
 
 function renderMain() {
   const screens = {
-    home: V.renderHome, calendar: V.renderCalendar, goals: V.renderGoals, settings: V.renderSettings, measure: renderMeasure, body: renderBody, profile: renderProfileScreen, homeLog: renderHomeLog,
+    home: V.renderHome, calendar: V.renderCalendar, goals: V.renderGoals, settings: V.renderSettings, measure: renderMeasure, body: renderBody, profile: renderProfileScreen, homeLog: renderHomeLog, complex: renderComplex,
     videos: V.renderVideos, videoForm: V.renderVideoForm, videoImport: V.renderVideoImport,
     programs: V.renderPrograms, program: () => V.renderProgram(S.progId), catalog: V.renderCatalog,
   };
@@ -838,14 +901,14 @@ const A = {
     for (const a of S.activities.filter((x) => x.date === d && x.kind === 'class' && x.classId !== id)) await removeActivity(a);
     P.setDay(d, S.plan, { classId: id });
     await savePlan();
-    if (!S.activities.some((a) => a.date === d && a.kind === 'class' && a.classId === id)) await addActivity({ kind: 'class', classId: id, date: d, minutes: P.CLASS_MIN });
+    if (!S.activities.some((a) => a.date === d && a.kind === 'class' && a.classId === id)) await addActivity({ kind: 'class', classId: id, date: d, minutes: ST.durations().class });
     refresh();
   },
   'cls-done': async (v) => {
     const [d, id] = splitV(v);
     const ex = S.activities.find((a) => a.date === d && a.kind === 'class' && a.classId === id);
     if (ex) await removeActivity(ex);
-    else await addActivity({ kind: 'class', classId: id, date: d, minutes: P.CLASS_MIN });
+    else await addActivity({ kind: 'class', classId: id, date: d, minutes: ST.durations().class });
     refresh();
   },
   // отметка активности: окошко с минутами и км
@@ -853,7 +916,7 @@ const A = {
     const [d, kind] = splitV(v);
     const group = ['circuit', 'yoga', 'video'].includes(kind) ? ['circuit', 'yoga', 'video'] : [kind];
     const ex = S.activities.find((a) => a.date === d && group.includes(a.kind) && !a.commute);
-    const item = kind === 'pool' ? { min: ST.DEFAULT_MIN.pool, km: 0 } : P.HOME_ITEMS.find((i) => i.kind === kind) || P.HOME_ITEMS.find((i) => i.kind === 'video');
+    const item = kind === 'pool' ? { min: ST.durations().pool, km: 0 } : P.HOME_ITEMS.find((i) => i.kind === kind) || P.HOME_ITEMS.find((i) => i.kind === 'video');
     S.overlay = {
       type: 'act', date: d, kind: ex ? ex.kind : kind, id: ex ? ex.id : null,
       minutes: ex ? ex.minutes ?? item.min : item.min, km: ex ? ex.distanceKm ?? item.km : item.km, steps: ex ? ex.steps : undefined,
@@ -1090,6 +1153,44 @@ const A = {
   'corr-skip': async () => { S.run.timer = null; S.run.corrective = 'skipped'; S.run.stage = 'warmup'; await saveRun(); window.scrollTo(0, 0); render(); },
   'warmup-start': async () => { startTimer('timer', 'warmup', [{ label: 'Разминка', sec: (S.run.slot === 'cardio' ? 5 : 10) * 60, half: true }], { endSay: 'Разминка окончена' }); await saveRun(); render(); },
   'warmup-done': async () => { S.run.timer = null; S.run.stage = S.run.slot === 'cardio' ? 'cardio' : 'exercises'; await saveRun(); render(); },
+  'cx-open': (v) => {
+    const [date, id] = splitV(v);
+    if (['home', 'calendar', 'goals', 'programs'].includes(S.screen)) prevScreen = S.screen;
+    S.cx = { id, date, plan: CX.complexPlan(id, S.settings), timer: null, edit: false };
+    S.screen = 'complex'; S.overlay = null; window.scrollTo(0, 0); render();
+  },
+  'cx-edit': () => { S.cx.edit = !S.cx.edit; render(); },
+  'cx-step': async (v) => { const c = S.cx; S.settings.complexes = CX.toggleStep(S.settings.complexes, c.id, v, CX.baseSteps(c.id, S.settings)); await saveSettings(); c.plan = CX.complexPlan(c.id, S.settings); render(); },
+  'cx-sec': async (v) => {
+    const c = S.cx; const [key, d] = splitV(v);
+    const cur = (CX.complexPlan(c.id, S.settings).find((x) => x.key === key) || {}).sec || 30;
+    S.settings.complexes = CX.bumpStep(S.settings.complexes, c.id, key, cur, Number(d)); await saveSettings(); c.plan = CX.complexPlan(c.id, S.settings); render();
+  },
+  'cx-close': () => { S.cx = null; go('back'); },
+  'cx-start': () => {
+    snd.unlock();
+    const c = S.cx;
+    const segments = c.plan.map((x) => ({ label: x.name, sec: x.sec, say: x.name, beep: 'short' }));
+    c.timer = mkTimer('complex', segments, { endSay: 'Комплекс окончен' });
+    snd.announce(segments[0].say, 'short');
+    render();
+  },
+  'cx-pause': () => { const t = S.cx && S.cx.timer; if (!t) return; if (t.pausedAt) { t.pausedMs += Date.now() - t.pausedAt; t.pausedAt = null; } else t.pausedAt = Date.now(); render(); },
+  'cx-next': () => { const t = S.cx && S.cx.timer; if (!t) return; t.skipSec += tState(t).segRem + 0.01; tickComplex(); render(); },
+  // записать: по таймеру — сколько прошло (не больше плана), «уже сделано» — по плану
+  'cx-finish': async () => {
+    const c = S.cx; const t = c.timer;
+    const minutes = t ? Math.max(1, Math.round(Math.min(tState(t).el, totalSec(t)) / 60)) : CX.complexMinutes(c.plan);
+    await addActivity({ kind: 'complex', complexId: c.id, date: c.date, minutes });
+    S.cx = null; go('back');
+  },
+  'cx-done': async () => { const c = S.cx; await addActivity({ kind: 'complex', complexId: c.id, date: c.date, minutes: CX.complexMinutes(c.plan) }); S.cx = null; go('back'); },
+  'cx-undo': async (v) => {
+    const [date, id] = splitV(v);
+    const a = S.activities.find((x) => x.date === date && x.kind === 'complex' && x.complexId === id);
+    if (a) { await db.del('activities', a.id); S.activities = S.activities.filter((x) => x !== a); }
+    refresh();
+  },
   'timer-pause': async () => { const t = S.run.timer; if (!t) return; if (t.pausedAt) { t.pausedMs += Date.now() - t.pausedAt; t.pausedAt = null; } else t.pausedAt = Date.now(); await saveRun(); render(); },
   'timer-next': () => { const t = S.run.timer; if (!t) return; t.skipSec += tState(t).segRem + 0.01; tick(); render(); },
 
@@ -1244,7 +1345,7 @@ const A = {
     const r = S.run;
     const old = S.activities.find((a) => a.sessionId === r.id && a.kind === 'class');
     if (old) await removeActivity(old);
-    await addActivity({ kind: 'class', classId: id, date: r.date, minutes: P.CLASS_MIN, sessionId: r.id });
+    await addActivity({ kind: 'class', classId: id, date: r.date, minutes: ST.durations().class, sessionId: r.id });
     r.finishClass = id; r.stage = 'stretch';
     await saveRun(); window.scrollTo(0, 0); render();
   },
@@ -1466,6 +1567,10 @@ $app.addEventListener('change', async (e) => {
   else if (['v-title', 'v-notes', 'imp-text', 'imp-source'].includes(f)) S.form[{ 'v-title': 'title', 'v-notes': 'skipNotes', 'imp-text': 'text', 'imp-source': 'source' }[f]] = v;
   else if (f === 'startDate' && v) { S.settings.startDate = v; await saveSettings(); render(); }
   else if (f === 'name') { S.settings.name = v.trim(); await saveSettings(); }
+  else if (f === 'dur-gym' || f === 'dur-pool' || f === 'dur-class') {
+    const n = Math.round(num(v)); const k = f.slice(4);
+    if (n >= 5 && n <= 240) { S.settings.durations = { ...(S.settings.durations || {}), [k]: n }; await saveSettings(); }
+  }
   else if (f === 'stepsGoal') { const n = Math.round(num(v)); if (n >= 1000 && n <= 30000) { S.settings.stepsGoal = n; await saveSettings(); } }
   else if (f === 'commuteKm' || f === 'goalLossKg') { const n = num(v); if (n != null) { S.settings[f] = n; await saveSettings(); } }
   else if (f === 'import' && e.target.files[0]) doImport(e.target.files[0]);

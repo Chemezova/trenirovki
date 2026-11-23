@@ -42,15 +42,22 @@ export function daySteps(date) {
 // Время тренировок считается по обычной длительности, а не от запуска таймера: забытый таймер не даёт 3–4 часа.
 // Значения по умолчанию можно поправить в записи (gymMin у тренировки, minutes у отметки).
 export const DEFAULT_MIN = { gym: 50, gymLo: 40, gymHi: 60, pool: 35, poolHi: 60, cardio: 30, cardioHi: 60, class: 55 };
+// Обычная длительность занятий: по умолчанию DEFAULT_MIN, человек может поменять в настройках (settings.durations = { gym, pool, class })
+export function durations(settings = S.settings) {
+  const d = (settings && settings.durations) || {};
+  const pick = (k) => (d[k] >= 5 && d[k] <= 240 ? Math.round(d[k]) : DEFAULT_MIN[k]);
+  const gym = pick('gym');
+  return { ...DEFAULT_MIN, gym, gymLo: Math.min(DEFAULT_MIN.gymLo, gym), gymHi: Math.max(DEFAULT_MIN.gymHi, gym), pool: pick('pool'), poolHi: Math.max(DEFAULT_MIN.poolHi, pick('pool')), class: pick('class') };
+}
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 const cardioMin = (s) => Math.min(DEFAULT_MIN.cardioHi, (s.cardio ? s.cardio.minutes || 0 : 0) + (s.finisherCardio ? s.finisherCardio.minutes || 0 : 0));
 const isStrength = (s) => !!s.slot && s.slot !== 'cardio' && s.slot !== 'pool';
 // Силовая часть: заданное вручную, иначе по времени визита без бассейна и кардио, но в пределах 40–60 мин; без данных — 50
 export function gymMinutes(s) {
   if (s.gymMin > 0) return s.gymMin;
-  if (s.retro || !s.finishedAt || !s.checkInAt) return DEFAULT_MIN.gym;
+  if (s.retro || !s.finishedAt || !s.checkInAt) return durations().gym;
   const wall = (new Date(s.finishedAt) - new Date(s.checkInAt)) / 60000 - sessionPoolMin(s) - cardioMin(s);
-  return Number.isFinite(wall) ? Math.round(clamp(wall, DEFAULT_MIN.gymLo, DEFAULT_MIN.gymHi)) : DEFAULT_MIN.gym;
+  return Number.isFinite(wall) ? Math.round(clamp(wall, durations().gymLo, durations().gymHi)) : durations().gym;
 }
 export function sessionMinutes(s) {
   const m = (isStrength(s) ? gymMinutes(s) : 0) + sessionPoolMin(s) + cardioMin(s) + (s.slot === 'cardio' && !cardioMin(s) ? 40 : 0);
@@ -72,13 +79,13 @@ export function dayMinutes(date) {
 export const homeMinutesOn = (date) => activitiesOn(date).filter((a) => HOME_KINDS.includes(a.kind)).reduce((t, a) => t + (a.minutes || 0), 0);
 // Минуты бассейна в одной тренировке: плавание + аквааэробика; день клуба, отмеченный задним числом, — 45 мин
 export function sessionPoolMin(s) {
-  const swim = s.pool && s.pool.result !== 'none' ? Math.min(DEFAULT_MIN.poolHi, s.pool.minutes || DEFAULT_MIN.pool) : s.retro && s.gymKind !== 'gym' ? DEFAULT_MIN.pool : 0;
+  const swim = s.pool && s.pool.result !== 'none' ? Math.min(durations().poolHi, s.pool.minutes || durations().pool) : s.retro && s.gymKind !== 'gym' ? durations().pool : 0;
   return swim + (s.aqua ? s.aqua.minutes || 0 : 0);
 }
 // Бассейн за день: из тренировок плюс отдельные отметки «Бассейн»
 export function swimMinutesOn(date) {
   return sessionsOn(date).reduce((t, s) => t + sessionPoolMin(s), 0)
-    + activitiesOn(date).filter((a) => a.kind === 'pool').reduce((t, a) => t + (a.minutes || DEFAULT_MIN.pool), 0);
+    + activitiesOn(date).filter((a) => a.kind === 'pool').reduce((t, a) => t + (a.minutes || durations().pool), 0);
 }
 export const gymOn = (date) => sessionsOn(date).some((s) => s.slot && s.slot !== 'pool');
 

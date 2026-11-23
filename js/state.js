@@ -15,6 +15,7 @@ export const S = {
   health: {},           // date → { steps, km, source }
   videos: [],           // библиотека видео-тренировок со ссылками
   photos: {},           // exerciseId → objectURL своего фото тренажёра
+  cx: null,             // открытый домашний комплекс: { id, date, plan, timer }
   progId: null,         // открытая программа
   run: null,            // тренировка в процессе
   overlay: null,
