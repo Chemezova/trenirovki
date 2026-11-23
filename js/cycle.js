@@ -3,9 +3,9 @@
 export const DEFAULT_START = '2026-10-26';
 
 export const PHASES = {
-  p1: { name: 'Освоение', reps: { min: 12, max: 15 }, rest: 90, cardioMin: 30, steps: '7–8 тыс.' },
-  p2: { name: 'Набор', reps: { min: 10, max: 12 }, rest: 90, cardioMin: 35, steps: '8–9 тыс.' },
-  p3: { name: 'Закрепление', reps: { min: 10, max: 12 }, rest: 60, cardioMin: 40, steps: '9–10 тыс.' },
+  p1: { name: 'Освоение', reps: { min: 12, max: 15 }, rest: 90, cardioMin: 30, steps: 'по цели' },
+  p2: { name: 'Набор', reps: { min: 10, max: 12 }, rest: 90, cardioMin: 35, steps: 'по цели' },
+  p3: { name: 'Закрепление', reps: { min: 10, max: 12 }, rest: 60, cardioMin: 40, steps: 'по цели' },
   deload: { name: 'Разгрузка', reps: { min: 10, max: 12 }, rest: 60, cardioMin: 25, steps: 'как получится' },
 };
 export const PHASE_ORDER = ['p1', 'p2', 'p3', 'deload'];

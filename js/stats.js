@@ -3,7 +3,7 @@ import { S } from './state.js';
 import * as cy from './cycle.js';
 
 export const STEPS_PER_KM = 1350;
-const HOME_KINDS = ['ringfit', 'yoga', 'circuit', 'video', 'other'];
+const HOME_KINDS = ['ringfit', 'yoga', 'circuit', 'video', 'other', 'complex'];
 
 export const sessionsOn = (date) => S.sessions.filter((s) => s.date === date && (s.status === 'done' || s.status === 'partial'));
 export const activitiesOn = (date) => S.activities.filter((a) => a.date === date);
@@ -39,28 +39,46 @@ export function daySteps(date) {
   return estSteps(date);
 }
 
-function sessionMinutes(s) {
-  if (s.retro || !s.finishedAt) return 150;
-  const m = (new Date(s.finishedAt) - new Date(s.checkInAt)) / 60000;
-  return Math.max(30, Math.min(240, m));
+// Время тренировок считается по обычной длительности, а не от запуска таймера: забытый таймер не даёт 3–4 часа.
+// Значения по умолчанию можно поправить в записи (gymMin у тренировки, minutes у отметки).
+export const DEFAULT_MIN = { gym: 50, gymLo: 40, gymHi: 60, pool: 35, poolHi: 60, cardio: 30, cardioHi: 60, class: 55 };
+const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
+const cardioMin = (s) => Math.min(DEFAULT_MIN.cardioHi, (s.cardio ? s.cardio.minutes || 0 : 0) + (s.finisherCardio ? s.finisherCardio.minutes || 0 : 0));
+const isStrength = (s) => !!s.slot && s.slot !== 'cardio' && s.slot !== 'pool';
+// Силовая часть: заданное вручную, иначе по времени визита без бассейна и кардио, но в пределах 40–60 мин; без данных — 50
+export function gymMinutes(s) {
+  if (s.gymMin > 0) return s.gymMin;
+  if (s.retro || !s.finishedAt || !s.checkInAt) return DEFAULT_MIN.gym;
+  const wall = (new Date(s.finishedAt) - new Date(s.checkInAt)) / 60000 - sessionPoolMin(s) - cardioMin(s);
+  return Number.isFinite(wall) ? Math.round(clamp(wall, DEFAULT_MIN.gymLo, DEFAULT_MIN.gymHi)) : DEFAULT_MIN.gym;
 }
-
+export function sessionMinutes(s) {
+  const m = (isStrength(s) ? gymMinutes(s) : 0) + sessionPoolMin(s) + cardioMin(s) + (s.slot === 'cardio' && !cardioMin(s) ? 40 : 0);
+  return m || 20;
+}
+// Ходьба в минутах для дня, где другого занятия нет: по шагам, около 100 шагов в минуту
+export const STEPS_PER_MIN = 100;
 export function dayMinutes(date) {
   let m = 0;
+  let walk = 0;
   for (const s of sessionsOn(date)) m += sessionMinutes(s);
-  for (const a of activitiesOn(date)) m += a.minutes || (a.distanceKm ? a.distanceKm * 13 : 0);
-  return Math.round(m);
+  for (const a of activitiesOn(date)) {
+    const x = a.minutes || (a.distanceKm ? a.distanceKm * 13 : 0);
+    if (a.kind === 'walk') walk += x; else m += x;
+  }
+  if (m === 0) walk = Math.max(walk, Math.min(120, Math.round(daySteps(date) / STEPS_PER_MIN)));
+  return Math.round(m + walk);
 }
 export const homeMinutesOn = (date) => activitiesOn(date).filter((a) => HOME_KINDS.includes(a.kind)).reduce((t, a) => t + (a.minutes || 0), 0);
 // Минуты бассейна в одной тренировке: плавание + аквааэробика; день клуба, отмеченный задним числом, — 45 мин
 export function sessionPoolMin(s) {
-  const swim = s.pool && s.pool.result !== 'none' ? s.pool.minutes || 25 : s.retro && s.gymKind !== 'gym' ? 45 : 0;
+  const swim = s.pool && s.pool.result !== 'none' ? Math.min(DEFAULT_MIN.poolHi, s.pool.minutes || DEFAULT_MIN.pool) : s.retro && s.gymKind !== 'gym' ? DEFAULT_MIN.pool : 0;
   return swim + (s.aqua ? s.aqua.minutes || 0 : 0);
 }
 // Бассейн за день: из тренировок плюс отдельные отметки «Бассейн»
 export function swimMinutesOn(date) {
   return sessionsOn(date).reduce((t, s) => t + sessionPoolMin(s), 0)
-    + activitiesOn(date).filter((a) => a.kind === 'pool').reduce((t, a) => t + (a.minutes || 30), 0);
+    + activitiesOn(date).filter((a) => a.kind === 'pool').reduce((t, a) => t + (a.minutes || DEFAULT_MIN.pool), 0);
 }
 export const gymOn = (date) => sessionsOn(date).some((s) => s.slot && s.slot !== 'pool');
 
@@ -112,6 +130,7 @@ export const TYPE_ROWS = [
   ['ringfit', 'Ring Fit', 'ring'],
   ['yoga', 'Йога', 'yoga'],
   ['circuit', 'Видео-тренировки', 'video'],
+  ['complex', 'Домашние комплексы', 'plus'],
   ['other', 'Другое', 'plus'],
 ];
 
@@ -121,11 +140,11 @@ export function typeBreakdown(from, to) {
   for (const s of S.sessions) {
     if (s.date < from || s.date > to || !(s.status === 'done' || s.status === 'partial')) continue;
     const pool = sessionPoolMin(s);
-    const cardio = (s.cardio ? s.cardio.minutes || 0 : 0) + (s.finisherCardio ? s.finisherCardio.minutes || 0 : 0);
+    const cardio = cardioMin(s);
     if (pool) add('pool', pool);
     if (s.finisherCardio) add('cardio', s.finisherCardio.minutes);
     if (s.slot === 'cardio' && (cardio || s.retro)) add('cardio', cardio || 40);
-    if (s.slot && s.slot !== 'cardio' && s.slot !== 'pool') add('gym', Math.max(20, sessionMinutes(s) - pool - cardio));
+    if (s.slot && s.slot !== 'cardio' && s.slot !== 'pool') add('gym', gymMinutes(s));
   }
   for (const a of S.activities) {
     if (a.date < from || a.date > to) continue;

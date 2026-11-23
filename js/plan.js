@@ -14,9 +14,8 @@ export const FINISHERS = {
 export const WALK_MIN_KM = 3;
 
 export const GYM_KINDS = {
-  full: { name: 'Зал + бассейн', hours: '3–3,5 ч', min: 195 },
-  gym: { name: 'Только зал', hours: '1,5–2 ч', min: 105 },
-  pool: { name: 'Только бассейн', hours: '1,5–2 ч', min: 105 },
+  gym: { name: 'Зал', hours: '1–1,5 ч', min: 75 },
+  pool: { name: 'Бассейн', hours: '≈1 ч', min: 60 },
 };
 
 export const HOME_ITEMS = [
@@ -54,10 +53,16 @@ export const CLASS_SCHEDULE = {
 };
 export const CLASS_MIN = 55;
 
-// План шагов в день по фазе недели (из ТЗ: 7–8, 8–9, 9–10 тыс.)
-export const STEPS_GOAL = { p1: 7500, p2: 8500, p3: 9500, deload: 7000, after: 8000 };
-export const stepsGoalForPhase = (phase) => STEPS_GOAL[phase] || 7500;
-export const stepsGoalOn = (date, start, shifts = []) => stepsGoalForPhase(cy.phaseOf(cy.weekOf(date, start, shifts)));
+// План шагов: одна цифра на день для всех недель (в настройках), за неделю — в семь раз больше.
+// Раньше цель росла по фазам до 9,5 тыс.; при 5–6 тыс. в обычные дни это давало вечное «не выполнено».
+export const DEFAULT_STEPS_GOAL = 5000;
+export const stepsGoalDay = (settings) => {
+  const g = Math.round(Number(settings && settings.stepsGoal));
+  return g >= 1000 && g <= 30000 ? g : DEFAULT_STEPS_GOAL;
+};
+export const stepsGoalWeek = (settings) => stepsGoalDay(settings) * 7;
+export const stepsGoalForPhase = (phase, settings) => stepsGoalDay(settings);
+export const stepsGoalOn = (date, start, shifts = [], settings) => stepsGoalDay(settings);
 
 // Когда в бассейне нет групповых занятий и можно плавать самой (день недели 1–7 → окна)
 export const POOL_FREE = {
@@ -98,7 +103,7 @@ export function effective(date, plan) {
   const o = plan.days[date] || {};
   const type = o.type || (DEFAULT_GYM_WEEKDAYS.includes(cy.weekday(date)) ? 'gym' : 'home');
   // в санитарный день бассейна по умолчанию только зал (если вид не выбран вручную)
-  return { date, type, gymKind: o.gymKind || (poolClosed(date) ? 'gym' : 'full'), classId: o.classId || null, cancelled: o.cancelled || null, program: o.program || null, finisher: o.finisher || 'pool' };
+  return { date, type, gymKind: o.gymKind === 'full' || !o.gymKind ? 'gym' : o.gymKind, classId: o.classId || null, cancelled: o.cancelled || null, program: o.program || null, finisher: o.finisher || 'pool' };
 }
 
 export const weekDates = (ws) => Array.from({ length: 7 }, (_, i) => cy.addDays(ws, i));
@@ -185,7 +190,7 @@ export const PHASE_WHY = {
   intro: { what: 'Вводная тренировка: подбираем рабочие веса, запоминаем настройки тренажёров.', why: 'Старт без перегруза — тело и глаза привыкают к нагрузке.' },
   p1: { what: '2–3 подхода по 12–15 повторов, отдых 90 с. Кардио 30 мин в зоне 2, бассейн спокойно.', why: 'Осваиваем технику и дыхание: выдох на усилии, без задержки. Связки и мышцы адаптируются.' },
   p2: { what: '3 подхода по 10–12, новые упражнения, интервалы в бассейне 4 × (2+1), кардио 35 мин.', why: 'Набираем силу: мышцы — главный союзник в снижении жира после 45.' },
-  p3: { what: '3 × 10–12, отдых 60 с, бассейн 6 × (2+1), кардио 40 мин, шаги 9–10 тыс.', why: 'Закрепляем: больше плотности и расхода энергии при той же безопасной технике.' },
+  p3: { what: '3 × 10–12, отдых 60 с, бассейн 6 × (2+1), кардио 40 мин.', why: 'Закрепляем: больше плотности и расхода энергии при той же безопасной технике.' },
   deload: { what: '2 подхода, вес последней недели, лёгкое плавание.', why: 'Разгрузка: организм восстанавливается, а результат закрепляется.' },
   after: { what: 'Цикл завершён — время итогового замера и плана на следующий.', why: 'Новый цикл стартует с текущих рабочих весов.' },
 };

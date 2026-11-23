@@ -202,7 +202,7 @@ function ensureInputs() {
   S.ui = { key, weight: prevSameUnit ? prev.weight : sug.weight, reps, breath: false, sug };
 }
 
-async function startSession(slot, walked, gymKind = 'full', finisher = 'pool', customOrder = null) {
+async function startSession(slot, walked, gymKind = 'gym', finisher = 'pool', customOrder = null) {
   const date = cy.today();
   const week = cy.weekOf(date, S.settings.startDate, S.settings.shifts);
   const phase = cy.trainingPhase(week);
@@ -853,7 +853,7 @@ const A = {
     const [d, kind] = splitV(v);
     const group = ['circuit', 'yoga', 'video'].includes(kind) ? ['circuit', 'yoga', 'video'] : [kind];
     const ex = S.activities.find((a) => a.date === d && group.includes(a.kind) && !a.commute);
-    const item = kind === 'pool' ? { min: 30, km: 0 } : P.HOME_ITEMS.find((i) => i.kind === kind) || P.HOME_ITEMS.find((i) => i.kind === 'video');
+    const item = kind === 'pool' ? { min: ST.DEFAULT_MIN.pool, km: 0 } : P.HOME_ITEMS.find((i) => i.kind === kind) || P.HOME_ITEMS.find((i) => i.kind === 'video');
     S.overlay = {
       type: 'act', date: d, kind: ex ? ex.kind : kind, id: ex ? ex.id : null,
       minutes: ex ? ex.minutes ?? item.min : item.min, km: ex ? ex.distanceKm ?? item.km : item.km, steps: ex ? ex.steps : undefined,
@@ -888,7 +888,7 @@ const A = {
     const slot = P.slotFor(v, S.plan, S.settings.startDate, { sessions: S.sessions }) || 'A';
     A.checkin(slot, d.gymKind, d.finisher);
   },
-  checkin: (slot, gymKind = 'full', finisher = 'pool') => {
+  checkin: (slot, gymKind = 'gym', finisher = 'pool') => {
     if (S.run) { A.resume(); return; }
     let warn = '';
     if (isStrength(slot)) {
@@ -947,7 +947,7 @@ const A = {
   'ex-open': (id) => { S.overlay = { type: 'ex', id }; render(); },
   'prog-today': async (id) => {
     const t = cy.today();
-    P.setDay(t, S.plan, { type: 'gym', cancelled: null, program: id, gymKind: P.effective(t, S.plan).gymKind === 'pool' ? 'full' : P.effective(t, S.plan).gymKind });
+    P.setDay(t, S.plan, { type: 'gym', cancelled: null, program: id, gymKind: P.effective(t, S.plan).gymKind === 'pool' ? 'gym' : P.effective(t, S.plan).gymKind });
     await savePlan(); refresh();
   },
   'day-prog': async (v) => { const [d, id] = splitV(v); P.setDay(d, S.plan, { program: id || null }); await savePlan(); refresh(); },
@@ -1466,6 +1466,7 @@ $app.addEventListener('change', async (e) => {
   else if (['v-title', 'v-notes', 'imp-text', 'imp-source'].includes(f)) S.form[{ 'v-title': 'title', 'v-notes': 'skipNotes', 'imp-text': 'text', 'imp-source': 'source' }[f]] = v;
   else if (f === 'startDate' && v) { S.settings.startDate = v; await saveSettings(); render(); }
   else if (f === 'name') { S.settings.name = v.trim(); await saveSettings(); }
+  else if (f === 'stepsGoal') { const n = Math.round(num(v)); if (n >= 1000 && n <= 30000) { S.settings.stepsGoal = n; await saveSettings(); } }
   else if (f === 'commuteKm' || f === 'goalLossKg') { const n = num(v); if (n != null) { S.settings[f] = n; await saveSettings(); } }
   else if (f === 'import' && e.target.files[0]) doImport(e.target.files[0]);
   else if (f === 'imp-file' && e.target.files[0]) { S.form.text = await e.target.files[0].text(); render(); }

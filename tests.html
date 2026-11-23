@@ -147,22 +147,47 @@ eq('санитарный: суббота 07.11 (первая в месяце) �
 eq('санитарный: в тексте расписания', poolFreeText('2026-11-15'), 'санитарный день — бассейн закрыт');
 eq('санитарный: свободных окон нет', poolFreeFor('2026-11-15'), []);
 eq('санитарный: по умолчанию «Только зал»', planDay('2026-11-15', { days: {} }).gymKind, 'gym');
-eq('санитарный: выбор вручную сохраняется', planDay('2026-11-15', { days: { '2026-11-15': { gymKind: 'full' } } }).gymKind, 'full');
-eq('обычное воскресенье: «Зал + бассейн»', planDay('2026-11-08', { days: {} }).gymKind, 'full');
+eq('старый вид «зал+бассейн» читается как «зал»', planDay('2026-11-15', { days: { '2026-11-15': { gymKind: 'full' } } }).gymKind, 'gym');
+eq('обычное воскресенье: «Зал»', planDay('2026-11-08', { days: {} }).gymKind, 'gym');
 
 // бассейн в подсчётах
 eq('бассейн: сделан по таймеру', sessionPoolMin({ pool: { result: 'done', minutes: 30 } }), 30);
 eq('бассейн: «не плавала» — 0', sessionPoolMin({ pool: { result: 'none' } }), 0);
-eq('бассейн: день клуба задним числом (зал+бассейн) — 45', sessionPoolMin({ retro: true, gymKind: 'full' }), 45);
+eq('бассейн: день клуба задним числом (старый «зал+бассейн») — 35', sessionPoolMin({ retro: true, gymKind: 'full' }), 35);
 eq('бассейн: задним числом, только зал — 0', sessionPoolMin({ retro: true, gymKind: 'gym' }), 0);
 eq('бассейн: плавание + аквааэробика', sessionPoolMin({ pool: { result: 'done', minutes: 20 }, aqua: { minutes: 15 } }), 35);
 S.sessions = [{ date: '2026-11-01', status: 'done', retro: true, gymKind: 'full', slot: 'A' }];
 S.activities = [{ date: '2026-11-01', kind: 'pool', minutes: 40 }, { date: '2026-11-02', kind: 'pool', minutes: 30 }, { date: '2026-11-03', kind: 'class', classId: 'x' }];
-eq('бассейн за день: тренировка + отметка', swimMinutesOn('2026-11-01'), 85);
+eq('бассейн за день: тренировка + отметка', swimMinutesOn('2026-11-01'), 75);
 eq('бассейн за день: только отметка', swimMinutesOn('2026-11-02'), 30);
 eq('бассейн за день: нет', swimMinutesOn('2026-11-04'), 0);
 eq('визиты в клуб: бассейн и групповое считаются', clubVisitDates(), ['2026-11-01', '2026-11-02', '2026-11-03']);
 S.sessions = []; S.activities = [];
+
+// длительность: забытый таймер не раздувает день
+const { gymMinutes, sessionMinutes, dayMinutes, DEFAULT_MIN } = await import('./js/stats.js');
+const wall = (min) => ({ slot: 'A', status: 'done', checkInAt: '2026-11-10T10:00:00', finishedAt: `2026-11-10T${String(10 + Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}:00` });
+eq('время зала: таймер забыт на 4 часа → 60', gymMinutes(wall(240)), 60);
+eq('время зала: быстро (20 мин) → не меньше 40', gymMinutes(wall(20)), 40);
+eq('время зала: обычные 50', gymMinutes(wall(50)), 50);
+eq('время зала: без данных → 50', gymMinutes({ slot: 'A', retro: true }), 50);
+eq('время зала: заданное вручную', gymMinutes({ slot: 'A', gymMin: 45 }), 45);
+eq('время зала: из визита вычитается бассейн', gymMinutes({ ...wall(100), pool: { result: 'done', minutes: 35 } }), 60);
+eq('время визита: зал 50 + бассейн 35', sessionMinutes({ slot: 'A', retro: true, pool: { result: 'done', minutes: 35 } }), 85);
+eq('бассейн: забытый таймер не больше часа', sessionPoolMin({ pool: { result: 'done', minutes: 200 } }), 60);
+eq('бассейн: без минут → 35', sessionPoolMin({ pool: { result: 'done' } }), 35);
+S.sessions = []; S.activities = []; S.health = {};
+eq('день: пусто → 0', dayMinutes('2026-11-12'), 0);
+S.health = { '2026-11-12': { steps: 6000 } };
+eq('день только с ходьбой: шаги → минуты (6000 → 60)', dayMinutes('2026-11-12'), 60);
+S.health = { '2026-11-12': { steps: 30000 } };
+eq('день только с ходьбой: не больше 120 мин', dayMinutes('2026-11-12'), 120);
+S.health = { '2026-11-12': { steps: 6000 } };
+S.activities = [{ date: '2026-11-12', kind: 'class', minutes: 55 }];
+eq('день с занятием: шаги не прибавляются', dayMinutes('2026-11-12'), 55);
+S.activities = [{ date: '2026-11-12', kind: 'walk', minutes: 75, distanceKm: 5 }];
+eq('день: ходьба с отметкой, без двойного счёта', dayMinutes('2026-11-12'), 75);
+S.activities = []; S.health = {};
 
 // мотивация: тенденция веса и другие признаки прогресса
 const { weightTrend, girthProgress, strengthGains, recentVisits, motivation } = await import('./js/stats.js');
@@ -253,10 +278,13 @@ S.health = {};
 
 // план шагов по фазе (старт цикла 2026-10-20: неделя 1–4 → 7500, 5–8 → 8500)
 const { stepsGoalOn, stepsGoalForPhase } = await import('./js/plan.js');
-eq('план шагов: освоение', stepsGoalOn('2026-11-09', '2026-10-20'), 7500);
-eq('план шагов: набор (неделя 5)', stepsGoalOn('2026-11-24', '2026-10-20'), 8500);
-eq('план шагов: закрепление', stepsGoalForPhase('p3'), 9500);
-eq('план шагов: неизвестная фаза', stepsGoalForPhase('xx'), 7500);
+const { stepsGoalDay, stepsGoalWeek } = await import('./js/plan.js');
+eq('шаги: по умолчанию 5000 в день', stepsGoalDay({}), 5000);
+eq('шаги: цель из настроек', stepsGoalDay({ stepsGoal: 6000 }), 6000);
+eq('шаги: мусор в настройках → по умолчанию', stepsGoalDay({ stepsGoal: 'abc' }), 5000);
+eq('шаги: слишком мало → по умолчанию', stepsGoalDay({ stepsGoal: 200 }), 5000);
+eq('шаги: неделя = 7 дней (35 000)', stepsGoalWeek({}), 35000);
+eq('шаги: одинаково во всех фазах', stepsGoalForPhase('p3', {}), stepsGoalOn('2026-11-09', '2026-10-20', [], {}));
 
 // подписи календаря
 eq('часы: пусто', hoursShortText(0), '');

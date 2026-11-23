@@ -31,12 +31,11 @@ export function weekLabel(week, phase) {
 
 export function gymTitle(slot, kind, finisher = 'pool') {
   const base = slot === 'cardio' ? 'Кардио' : programName(slot);
-  return kind === 'full' && slot !== 'pool' ? `${base} + бассейн` : base;
+  return base;
 }
 
 const homeDone = (date, kind) => ST.activitiesOn(date).find((a) => (kind === 'walk' ? a.kind === 'walk' && !a.commute : kind === 'video' ? ['circuit', 'yoga', 'video'].includes(a.kind) : a.kind === kind));
 
-const stepsGoalPerDay = P.stepsGoalForPhase;
 const fmtN = (n) => Math.round(n).toLocaleString('ru-RU');
 
 // ---------- элементы дня ----------
@@ -90,7 +89,7 @@ export function dayItemsHtml(date) {
   // ходьба за день — отдельный блок, как полноценная активность (шаги из Здоровья или вручную)
   if (date <= today && !d.cancelled) {
     const steps = Math.round(ST.daySteps(date));
-    const goal = P.stepsGoalOn(date, S.settings.startDate, S.settings.shifts);
+    const goal = P.stepsGoalDay(S.settings);
     const pct = Math.min(100, Math.round((steps / goal) * 100));
     const meta = steps ? `${fmtN(steps)} из ${fmtN(goal)} шагов · ${dec(ST.dayKm(date))} км · ${ST.kmSource(date)}` : `план ${fmtN(goal)} шагов — пока нет данных`;
     const act = canEdit ? btn(steps ? 'Изменить' : 'Добавить', 'km-edit', { v: date, cls: 'btn-small btn-secondary' }) : '';
@@ -114,11 +113,12 @@ export function dayItemsHtml(date) {
   const poolAct = ST.activitiesOn(date).find((a) => a.kind === 'pool');
   const poolInSession = poolAct ? 0 : ST.sessionsOn(date).reduce((t, x) => t + ST.sessionPoolMin(x), 0);
   const poolShut = P.poolClosed(date);
-  if (!d.cancelled && (!past || canEdit || poolAct || poolInSession)) {
+  const poolIsMain = d.type === 'gym' && d.gymKind === 'pool' && !poolAct;
+  if (!d.cancelled && !poolIsMain && (!past || canEdit || poolAct || poolInSession)) {
     const poolDone = !!poolAct || poolInSession > 0;
     // санитарный день: бассейн закрыт, отмечать нечего (если отметка уже есть — показываем как обычно)
     const closedRow = poolShut && !poolDone;
-    const poolMeta = poolAct ? `${poolAct.minutes || 30} мин` : poolInSession ? `${poolInSession} мин · из тренировки` : closedRow ? cy.capitalize(P.POOL_SANITARY_TEXT) : past ? 'не отмечено' : `Свободно: ${P.poolFreeText(date)}`;
+    const poolMeta = poolAct ? `${poolAct.minutes || ST.DEFAULT_MIN.pool} мин` : poolInSession ? `${poolInSession} мин · из тренировки` : closedRow ? cy.capitalize(P.POOL_SANITARY_TEXT) : past ? 'не отмечено' : `Свободно: ${P.poolFreeText(date)}`;
     const pv = esc(`${date}|pool`);
     const tappable = !closedRow && !poolInSession && !future && canEdit;
     rows.push(`<div class="day-item ${poolDone ? 'is-done' : closedRow ? 'is-past' : past ? 'is-past' : 'is-suggest'} ${tappable ? 'is-tappable' : ''}" ${tappable ? `data-a="h-toggle" data-v="${pv}" role="button" tabindex="0"` : ''}><div class="di-icon">${icon('swim')}</div><div class="di-body"><div class="di-title">Бассейн</div><div class="di-meta">${esc(poolMeta)}</div></div>${poolInSession || closedRow ? '' : tick('h-toggle', `${date}|pool`, !!poolAct, { disabled: future || !canEdit, label: 'Бассейн' })}</div>`);
@@ -146,7 +146,7 @@ function dayDone(date) {
 function hoursShort(date) {
   const d = P.effective(date, S.plan);
   if (d.cancelled) return '—';
-  const h = d.type === 'gym' ? (d.gymKind === 'full' ? '3,5ч' : '2ч') : '2ч';
+  const h = d.type === 'gym' ? (d.gymKind === 'pool' ? '1ч' : '1,5ч') : '2ч';
   return d.classId ? `${h}+1` : h;
 }
 
@@ -185,7 +185,7 @@ function goalRows() {
   const phase = cy.phaseOf(cy.weekOf(t, S.settings.startDate));
   const weekKm = ST.sumRange(ST.dayKm, ws, t);
   const weekSteps = ST.sumRange(ST.daySteps, ws, t);
-  const weekGoalKm = (stepsGoalPerDay(phase) / ST.STEPS_PER_KM) * 7;
+  const weekGoalKm = (P.stepsGoalDay(S.settings) / ST.STEPS_PER_KM) * 7;
   const pct = (v) => `${Math.max(0, Math.min(100, v * 100)).toFixed(1)}%`;
   return `
     <div class="goal-row"><div class="goal-head"><b>Вес: ${wl ? (lost > 0 ? `−${dec(lost)}` : '0') : '—'} из −${goal} кг</b><span class="sub">${exp >= 0.05 ? `по плану сейчас −${dec(exp)}` : 'старт 26.10'}</span></div>
@@ -472,7 +472,7 @@ function walkBlock() {
   const unit = S.ui.walkUnit || 'steps';
   const wk = ST.walkTotals(t);
   const phase = (d) => cy.phaseOf(cy.weekOf(d, S.settings.startDate, S.settings.shifts));
-  const goalDay = (d) => P.stepsGoalForPhase(phase(d));
+  const goalDay = () => P.stepsGoalDay(S.settings);
   const val = (x) => (unit === 'km' ? x.km : x.steps);
   const planOf = (steps) => (unit === 'km' ? steps / ST.STEPS_PER_KM : steps);
   const fmt = unit === 'km' ? (v) => dec(v, 1) : (v) => dec(v / 1000, 1);
@@ -526,7 +526,7 @@ export function renderGoals() {
   return `<header class="page-title"><h1>Цели и прогресс</h1><button class="icon-btn" data-a="go" data-v="settings" aria-label="Настройки">${icon('gear')}</button></header>
     ${profileCard()}
     <section class="card"><h2>Мои цели к ${cy.fmtDate(end)}</h2>
-      <ul class="list"><li>Минус ${S.settings.goalLossKg} кг жира${wl && wl.lost > 0 ? ` · уже −${dec(wl.lost)}` : ''}</li><li>Минус 2–4 см на талии</li><li>3 визита в клуб в неделю</li><li>Шаги: 7–8 тыс. → 9–10 тыс. в день</li></ul>
+      <ul class="list"><li>Минус ${S.settings.goalLossKg} кг жира${wl && wl.lost > 0 ? ` · уже −${dec(wl.lost)}` : ''}</li><li>Минус 2–4 см на талии</li><li>3 визита в клуб в неделю</li><li>Шаги: ${fmtN(P.stepsGoalDay(S.settings))} в день, ${fmtN(P.stepsGoalWeek(S.settings))} в неделю</li></ul>
       ${goalRows()}</section>
     <div class="grid2">${btn(`${icon('scale', { size: 18 })} Вес`, 'weight-open')}${btn(`${icon('plus', { size: 18 })} Замер`, 'go', { v: 'measure' })}${btn(`${icon('walk', { size: 18 })} Активность`, 'go', { v: 'homeLog' })}${btn(`${icon('video', { size: 18 })} Мои видео`, 'go', { v: 'videos' })}</div>
     ${goalCalendar()}
@@ -657,6 +657,8 @@ export function renderSettings() {
     <section class="card"><h2>Цикл и цель</h2>
       <label class="field">Старт цикла (понедельник недели 1)<input type="date" data-f="startDate" value="${esc(s.startDate)}"></label>
       <label class="field">Цель, минус кг<input type="text" inputmode="decimal" data-f="goalLossKg" value="${esc(dec(s.goalLossKg))}"></label>
+      <label class="field">Шагов в день (цель)<input type="text" inputmode="numeric" data-f="stepsGoal" value="${esc(String(P.stepsGoalDay(s)))}"></label>
+      <p class="note">В неделю выйдет ${fmtN(P.stepsGoalWeek(s))}. Поставь столько, сколько реально выходит в обычные дни, — потом можно поднять.</p>
       <label class="field">Как к тебе обращаться<input type="text" data-f="name" value="${esc(s.name || '')}" placeholder="Елена"></label></section>
     <section class="card"><h2>Мой зал</h2>
       <p>Если чем-то пользоваться неудобно, в «Занято? Аналоги» и в каталоге будут только варианты без этого.</p>
@@ -686,7 +688,7 @@ export function renderDaySheet(date) {
     parts.push(`<div class="seg" role="group"><button data-a="day-type" data-v="${date}|gym" aria-pressed="${d.type === 'gym'}">День клуба</button><button data-a="day-type" data-v="${date}|home" aria-pressed="${d.type === 'home'}">Дома</button></div>`);
     if (d.type === 'gym') {
       parts.push(`<div class="chips">${Object.entries(P.GYM_KINDS).map(([k, v]) => chip(v.name, 'gym-kind', `${date}|${k}`, d.gymKind === k)).join('')}</div>`);
-      if (P.poolClosed(date)) parts.push('<p class="note">В бассейне санитарный день, он закрыт. Поэтому по умолчанию стоит «Только зал».</p>');
+      if (P.poolClosed(date)) parts.push('<p class="note">В бассейне санитарный день, он закрыт. Бассейн в этот день не выбрать.</p>');
       if (d.gymKind !== 'pool') {
         const cur = P.slotFor(date, S.plan, S.settings.startDate, { sessions: S.sessions });
         parts.push(`<fieldset><legend>Программа</legend><div class="chips">${chip('По плану', 'day-prog', `${date}|`, !d.program)}${FOLDERS.flatMap((f) => f.programs).map((id) => chip(PROGRAMS[id].name, 'day-prog', `${date}|${id}`, d.program === id)).join('')}</div>
