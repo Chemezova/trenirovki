@@ -11,6 +11,7 @@ import * as CP from './catalog-plan.js';
 import * as BODY from './body.js';
 import * as FOC from './corrective.js';
 import * as CX from './complexes.js';
+import * as SCH from './schedule.js';
 import * as PROF from './profile.js';
 import { EXERCISE_META, MUSCLES, MUSCLE_GROUPS, CONDITIONS } from './catalog-data.js';
 import { hasRuVoice } from './sound.js';
@@ -55,6 +56,28 @@ function complexRowsHtml(date, canEdit, future, past) {
     const act = done ? tick('cx-undo', `${date}|${id}`, true, { disabled: !canEdit, label: c.name }) : '';
     return `<div class="day-item ${done ? 'is-done' : past ? 'is-past' : 'is-suggest'} ${open ? 'is-tappable' : ''}" ${open ? `data-a="cx-open" data-v="${esc(`${date}|${id}`)}" role="button" tabindex="0"` : ''}><div class="di-icon">${icon(c.icon)}</div><div class="di-body"><div class="di-title">${esc(c.name)}</div><div class="di-meta">${esc(meta)}</div></div>${act}</div>`;
   });
+}
+
+// Порядок дня клуба: что за чем и во сколько (подсказка). Показывается, когда в дне больше одного занятия.
+function orderHtml(date, d) {
+  if (d.cancelled || d.type !== 'gym' || date < cy.today()) return '';
+  const dur = ST.durations(S.settings);
+  const cls = d.classId ? P.classById(date, d.classId) : null;
+  const poolOpen = !P.poolClosed(date);
+  const items = [];
+  if (d.gymKind !== 'pool') items.push({ kind: 'gym', min: dur.gym });
+  if (cls) items.push({ kind: 'class', min: dur.class, start: toMin(cls.time) });
+  if (poolOpen) items.push({ kind: 'pool', min: dur.pool, optional: d.gymKind !== 'pool' });
+  if (items.length < 2) return '';
+  const r = SCH.dayOrder({
+    items, win: { start: toMin(P.GYM_WINDOW.start), end: toMin(P.GYM_WINDOW.end) },
+    windows: P.poolFreeFor(date).map((w) => ({ start: toMin(w.start), end: toMin(w.end) })), allDay: P.poolAllDay(date), gaps: SCH.scheduleGaps(S.settings),
+  });
+  if (!r.steps.length && !r.problems.length) return '';
+  const name = (x) => (x.kind === 'gym' ? 'Зал' : x.kind === 'pool' ? `Бассейн${x.optional ? ' (по желанию)' : ''}` : cls.name);
+  return `<section class="day-order"><div class="sub">Порядок дня · подсказка</div>
+    <ol class="list">${r.steps.map((x) => `<li><b>${SCH.fmtMin(x.start)}–${SCH.fmtMin(x.end)}</b> ${esc(name(x))}${x.why ? `<br><span class="sub">${esc(x.why)}</span>` : ''}</li>`).join('')}</ol>
+    ${[...r.problems, ...r.notes].map((n) => `<p class="note">${esc(n)}</p>`).join('')}</section>`;
 }
 
 export function dayItemsHtml(date) {
@@ -153,7 +176,7 @@ export function dayItemsHtml(date) {
   }
   const cxHtml = d.type === 'gym' && !d.cancelled && (!past || canEdit)
     ? `<details class="classes"><summary>Дома: комплексы · ${CX.COMPLEX_IDS.length}</summary><div class="day-list">${complexRowsHtml(date, canEdit, future, past).join('')}</div><p class="note">Осанка, кор на коврике, разминка суставов. Состав и время каждого упражнения можно поменять внутри.</p></details>` : '';
-  return `<div class="day-list">${rows.join('')}</div>${classesHtml}${cxHtml}`;
+  return `${orderHtml(date, d)}<div class="day-list">${rows.join('')}</div>${classesHtml}${cxHtml}`;
 }
 
 function dayDone(date) {
@@ -680,7 +703,10 @@ export function renderSettings() {
         <label class="field">Зал (силовая)<input type="text" inputmode="numeric" data-f="dur-gym" value="${ST.durations(s).gym}"></label>
         <label class="field">Бассейн<input type="text" inputmode="numeric" data-f="dur-pool" value="${ST.durations(s).pool}"></label>
         <label class="field">Групповое занятие<input type="text" inputmode="numeric" data-f="dur-class" value="${ST.durations(s).class}"></label>
-        <p class="note">Так считается время дня, если таймер не вёл счёт точно или занятие отмечено задним числом. Поставь, как обычно получается у тебя.</p></fieldset>
+        <p class="note">Так считается время дня, если таймер не вёл счёт точно или занятие отмечено задним числом. Поставь, как обычно получается у тебя.</p>
+        <label class="field">Пауза между занятиями, мин<input type="text" inputmode="numeric" data-f="sch-change" value="${SCH.scheduleGaps(s).changeMin}"></label>
+        <label class="field">Душ перед бассейном, мин<input type="text" inputmode="numeric" data-f="sch-prep" value="${SCH.scheduleGaps(s).poolPrepMin}"></label>
+        <p class="note">Из этого считается порядок дня в клубе: время между зал, занятием и бассейном.</p></fieldset>
       <label class="field">Как к тебе обращаться<input type="text" data-f="name" value="${esc(s.name || '')}" placeholder="Елена"></label></section>
     <section class="card"><h2>Мой зал</h2>
       <p>Если чем-то пользоваться неудобно, в «Занято? Аналоги» и в каталоге будут только варианты без этого.</p>

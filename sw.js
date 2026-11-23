@@ -1,5 +1,5 @@
 // Офлайн: всё приложение лежит в кэше. При изменении файлов поднять VERSION.
-const VERSION = 'v29';
+const VERSION = 'v30';
 const CACHE = `trenirovki-${VERSION}`;
 const FILES = [
   './',
@@ -25,6 +25,7 @@ const FILES = [
   './js/body.js',
   './js/corrective.js',
   './js/complexes.js',
+  './js/schedule.js',
   './js/profile.js',
   './js/exercises-extra.js',
   './icons/icon-192.png',

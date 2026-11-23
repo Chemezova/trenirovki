@@ -1567,6 +1567,10 @@ $app.addEventListener('change', async (e) => {
   else if (['v-title', 'v-notes', 'imp-text', 'imp-source'].includes(f)) S.form[{ 'v-title': 'title', 'v-notes': 'skipNotes', 'imp-text': 'text', 'imp-source': 'source' }[f]] = v;
   else if (f === 'startDate' && v) { S.settings.startDate = v; await saveSettings(); render(); }
   else if (f === 'name') { S.settings.name = v.trim(); await saveSettings(); }
+  else if (f === 'sch-change' || f === 'sch-prep') {
+    const n = Math.round(num(v));
+    if (n >= 0 && n <= 60) { S.settings.schedule = { ...(S.settings.schedule || {}), [f === 'sch-change' ? 'changeMin' : 'poolPrepMin']: n }; await saveSettings(); }
+  }
   else if (f === 'dur-gym' || f === 'dur-pool' || f === 'dur-class') {
     const n = Math.round(num(v)); const k = f.slice(4);
     if (n >= 5 && n <= 240) { S.settings.durations = { ...(S.settings.durations || {}), [k]: n }; await saveSettings(); }

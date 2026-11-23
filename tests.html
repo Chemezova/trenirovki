@@ -560,6 +560,30 @@ const GM = [{ date: '2026-11-08', waistCm: 75, hipsCm: 103 }, { date: '2026-11-1
 eq('профиль: последние мерки берутся по свежей дате, записи анализа и веса не мешают', latestGirths(GM).map((g) => [g.key, g.value, g.date]), [['waistCm', 73.5, '2026-11-15'], ['bellyNavelCm', 83.5, '2026-11-15'], ['hipsCm', 102, '2026-11-15'], ['thighCm', 58, '2026-11-15'], ['chestCm', 96, '2026-11-15']]);
 eq('профиль: талия/бёдра по рулетке 73,5/102 = 0,72, без мерок — null', [waistHipRatio(latestGirths(GM)), waistHipRatio([])], [0.72, null]);
 
+// порядок занятий в дне клуба
+const SCH = await import('./js/schedule.js');
+const wmin = (arr) => arr.map(([a, b]) => ({ start: SCH.toMin(a), end: SCH.toMin(b) }));
+const WIN = { start: SCH.toMin('11:30'), end: SCH.toMin('15:30') };
+const fm = (r) => r.steps.map((x) => `${x.kind} ${SCH.fmtMin(x.start)}–${SCH.fmtMin(x.end)}`);
+const GAP = SCH.DEFAULT_GAPS;
+eq('порядок: йога в 13:00 → зал 12:00, бассейн 14:10', fm(SCH.dayOrder({ items: [{ kind: 'gym', min: 50 }, { kind: 'class', min: 55, start: SCH.toMin('13:00') }, { kind: 'pool', min: 35 }], win: WIN, allDay: true, gaps: GAP })), ['gym 12:00–12:50', 'class 13:00–13:55', 'pool 14:10–14:45']);
+const tue = SCH.dayOrder({ items: [{ kind: 'gym', min: 50 }, { kind: 'class', min: 55, start: SCH.toMin('14:00') }, { kind: 'pool', min: 35 }], win: WIN, windows: wmin([['10:30', '13:30'], ['15:00', '16:00']]), gaps: GAP });
+eq('порядок: вторник, йога 14:00, бассейн только в окно после занятия', fm(tue), ['gym 13:00–13:50', 'class 14:00–14:55', 'pool 15:10–15:45']);
+eq('порядок: вышли за 15:30 — об этом сказано', tue.notes.some((n) => n.includes('15:30')), true);
+eq('порядок: зал и бассейн без занятия — зал первым', fm(SCH.dayOrder({ items: [{ kind: 'pool', min: 35 }, { kind: 'gym', min: 50 }], win: WIN, windows: wmin([['10:30', '13:30']]), gaps: GAP })), ['gym 11:30–12:20', 'pool 12:35–13:10']);
+const nofit = SCH.dayOrder({ items: [{ kind: 'gym', min: 50 }, { kind: 'pool', min: 35 }], win: WIN, windows: wmin([['13:00', '13:30']]), gaps: GAP });
+eq('порядок: бассейн не помещается в окно — остаётся зал и понятное сообщение', [fm(nofit), nofit.problems.length], [['gym 11:30–12:20'], 1]);
+const late = SCH.dayOrder({ items: [{ kind: 'gym', min: 50 }, { kind: 'class', min: 55, start: SCH.toMin('12:00') }], win: WIN, gaps: GAP });
+eq('порядок: до занятия нет времени — силовая после него, с пояснением', [fm(late), late.steps[1].why.includes('после занятия')], [['class 12:00–12:55', 'gym 13:05–13:55'], true]);
+eq('порядок: пустой день', SCH.dayOrder({ items: [], win: WIN }), { steps: [], notes: [], problems: [], uncertain: false });
+eq('порядок: занятие не помещается ни в какой порядок — сообщение', SCH.dayOrder({ items: [{ kind: 'class', min: 55, start: SCH.toMin('12:00') }, { kind: 'class', min: 55, start: SCH.toMin('12:30') }], win: WIN, gaps: GAP }).problems.length, 1);
+eq('порядок: бассейн, если можно, ставится не перед занятием', SCH.dayOrder({ items: [{ kind: 'gym', min: 50 }, { kind: 'class', min: 55, start: SCH.toMin('13:00') }, { kind: 'pool', min: 35 }], win: WIN, allDay: true, gaps: GAP }).uncertain, false);
+eq('порядок: перед занятием бассейн — помечено как неуверенное', SCH.dayOrder({ items: [{ kind: 'pool', min: 35 }, { kind: 'class', min: 55, start: SCH.toMin('15:30') }], win: WIN, windows: wmin([['11:30', '13:30']]), gaps: GAP }).uncertain, true);
+eq('порядок: паузы по умолчанию', SCH.scheduleGaps({}), { changeMin: 10, poolPrepMin: 15 });
+eq('порядок: паузы из настроек, мусор игнорируется', [SCH.scheduleGaps({ schedule: { changeMin: 5, poolPrepMin: 20 } }), SCH.scheduleGaps({ schedule: { changeMin: 'x', poolPrepMin: 999 } })], [{ changeMin: 5, poolPrepMin: 20 }, { changeMin: 10, poolPrepMin: 15 }]);
+eq('порядок: душ перед бассейном не короче паузы между занятиями', SCH.scheduleGaps({ schedule: { changeMin: 30, poolPrepMin: 5 } }).poolPrepMin, 30);
+eq('порядок: свои паузы сдвигают время', fm(SCH.dayOrder({ items: [{ kind: 'gym', min: 50 }, { kind: 'class', min: 55, start: SCH.toMin('13:00') }], win: WIN, gaps: { changeMin: 20, poolPrepMin: 20 } })), ['gym 11:50–12:40', 'class 13:00–13:55']);
+
 out.innerHTML = `<b>${fail ? `<span class="fail">Провалено: ${fail}</span>` : '<span class="ok">Все тесты прошли</span>'} · пройдено ${pass}</b>\n\n` + out.innerHTML;
 document.title = fail ? `FAIL ${fail}` : `OK ${pass}`;
 </script>
